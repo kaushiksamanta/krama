@@ -9,7 +9,6 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#examples">Examples</a> •
-  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -285,10 +284,6 @@ retry:
 - `cancel` - Cancel workflow execution
 - `step` - Deliver payload to signal steps
 
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
 ### Development Setup
 
 ```bash
@@ -345,7 +340,3 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Built with [Temporal](https://temporal.io/)
 - Inspired by Airflow, Prefect, and Argo Workflows
 - DAG implementation using [dependency-graph](https://github.com/jriecken/dependency-graph)
-
----
-
-<p align="center">Made with ❤️ by the community</p>
