@@ -1,0 +1,104 @@
+name: user-registration
+version: 1.0.0
+description: A realistic workflow that validates user input, creates account, sends emails, and waits for approval
+
+# Define inputs that can be provided when starting the workflow
+inputs:
+  user:
+    name: string
+    email: string
+    password: string
+
+# Define the steps of the workflow
+steps:
+  # Step 1: Validate user input
+  - id: validate_input
+    activity: validateInput
+    input:
+      data: "{{inputs.user}}"
+      rules:
+        required: ["name", "email", "password"]
+        email: ["email"]
+        minLength:
+          password: 8
+
+  # Step 2: Create user in database (only if validation passed)
+  - id: create_user
+    activity: createUser
+    dependsOn: ["validate_input"]
+    when: "{{step.validate_input.result.isValid}}"
+    input:
+      name: "{{inputs.user.name}}"
+      email: "{{inputs.user.email}}"
+      password: "{{inputs.user.password}}"
+    retry:
+      count: 3
+      initialInterval: 1s
+      backoffCoefficient: 2.0
+
+  # Step 3: Send welcome email (only if user was created)
+  - id: send_welcome_email
+    activity: sendEmail
+    dependsOn: ["create_user"]
+    when: "{{step.create_user.result.status}} == 'active'"
+    timeout:
+      startToClose: 30s
+    input:
+      to: "{{inputs.user.email}}"
+      subject: "Welcome to Our Service, {{inputs.user.name}}!"
+      body: |
+        Hello {{inputs.user.name}},
+        
+        Thank you for registering with our service. We're excited to have you on board!
+        
+        Your account has been successfully created with the email: {{inputs.user.email}}
+        
+        Best regards,
+        The Team
+    retry:
+      count: 2
+      initialInterval: 5s
+
+  # Step 4: Log the registration (runs in parallel with email)
+  - id: log_registration
+    activity: logMessage
+    dependsOn: ["create_user"]
+    when: "{{step.create_user.result.userId}}"
+    input:
+      level: "info"
+      message: "New user registration completed"
+      context:
+        userId: "{{step.create_user.result.userId}}"
+        email: "{{inputs.user.email}}"
+
+  # Step 5: Wait for manual approval signal
+  # Client sends: handle.signal('step', 'approval', { approved: true })
+  - id: approval
+    type: signal
+    activity: waitForApproval
+    dependsOn: ["send_welcome_email"]
+
+  # Step 6: Send follow-up email only if approved
+  - id: send_followup_email
+    activity: sendEmail
+    dependsOn: ["approval"]
+    when: "{{step.approval.result.approved}} == true"
+    input:
+      to: "{{inputs.user.email}}"
+      subject: "Getting Started with Our Service"
+      body: |
+        Hi {{inputs.user.name}},
+        
+        We hope you're enjoying our service so far! Here are some tips to get started:
+        
+        1. Complete your profile
+        2. Explore our features
+        3. Join our community
+        
+        Let us know if you have any questions!
+        
+        Best regards,
+        The Team
+    retry:
+      count: 2
+      initialInterval: 10s

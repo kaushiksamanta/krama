@@ -1,0 +1,112 @@
+name: data-pipeline
+version: 1.0.0
+description: ETL pipeline with data extraction, transformation, validation, and loading
+
+inputs:
+  source:
+    url: string
+    apiKey: string
+  destination:
+    database: string
+    table: string
+
+steps:
+  # Step 1: Extract data from source
+  - id: extract_data
+    activity: fetchData
+    input:
+      url: "{{inputs.source.url}}"
+      method: "GET"
+      headers:
+        Authorization: "Bearer {{inputs.source.apiKey}}"
+    timeout:
+      startToClose: 60s
+    retry:
+      count: 3
+      initialInterval: 5s
+      backoffCoefficient: 2.0
+
+  # Step 2: Validate extracted data
+  - id: validate_data
+    activity: validateInput
+    dependsOn: ["extract_data"]
+    input:
+      data: "{{step.extract_data.result}}"
+      rules:
+        required: ["records"]
+    retry:
+      count: 2
+      initialInterval: 1s
+
+  # Step 3: Transform data (parallel processing could be added here)
+  - id: transform_data
+    activity: fetchData
+    dependsOn: ["validate_data"]
+    when: "{{step.validate_data.result.isValid}}"
+    input:
+      url: "http://transform-service/transform"
+      method: "POST"
+      data: "{{step.extract_data.result}}"
+    timeout:
+      startToClose: 120s
+    retry:
+      count: 2
+      initialInterval: 10s
+
+  # Step 4: Validate transformed data
+  - id: validate_transformed
+    activity: validateInput
+    dependsOn: ["transform_data"]
+    input:
+      data: "{{step.transform_data.result}}"
+      rules:
+        required: ["processedRecords", "recordCount"]
+
+  # Step 5: Load data to destination
+  - id: load_data
+    activity: fetchData
+    dependsOn: ["validate_transformed"]
+    when: "{{step.validate_transformed.result.isValid}}"
+    input:
+      url: "http://database-service/load"
+      method: "POST"
+      data:
+        database: "{{inputs.destination.database}}"
+        table: "{{inputs.destination.table}}"
+        records: "{{step.transform_data.result.processedRecords}}"
+    timeout:
+      startToClose: 180s
+    retry:
+      count: 3
+      initialInterval: 15s
+      backoffCoefficient: 2.0
+
+  # Step 6: Log pipeline completion
+  - id: log_completion
+    activity: logMessage
+    dependsOn: ["load_data"]
+    input:
+      level: "info"
+      message: "Data pipeline completed successfully"
+      context:
+        recordsProcessed: "{{step.transform_data.result.recordCount}}"
+        destination: "{{inputs.destination.database}}.{{inputs.destination.table}}"
+        duration: "{{step.load_data.result.durationMs}}"
+
+  # Step 7: Send notification
+  - id: send_notification
+    activity: sendEmail
+    dependsOn: ["log_completion"]
+    input:
+      to: "data-team@example.com"
+      subject: "Data Pipeline Completed"
+      body: |
+        The data pipeline has completed successfully.
+        
+        Records Processed: {{step.transform_data.result.recordCount}}
+        Destination: {{inputs.destination.database}}.{{inputs.destination.table}}
+        
+        Pipeline execution completed.
+    retry:
+      count: 2
+      initialInterval: 3s

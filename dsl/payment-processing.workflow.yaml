@@ -1,0 +1,111 @@
+name: payment-processing
+version: 1.0.0
+description: Process payment with validation, fraud check, and notification
+
+inputs:
+  payment:
+    amount: number
+    currency: string
+    paymentMethod: string
+    customerId: string
+  customer:
+    email: string
+    name: string
+
+steps:
+  # Step 1: Validate payment details
+  - id: validate_payment
+    activity: validateInput
+    input:
+      data: "{{inputs.payment}}"
+      rules:
+        required: ["amount", "currency", "paymentMethod", "customerId"]
+    retry:
+      count: 2
+      initialInterval: 1s
+
+  # Step 2: Check for fraud (runs only if validation passes)
+  - id: fraud_check
+    activity: fetchData
+    dependsOn: ["validate_payment"]
+    when: "{{step.validate_payment.result.isValid}}"
+    input:
+      url: "https://api.fraud-detection.example/check"
+      method: "POST"
+      data:
+        customerId: "{{inputs.payment.customerId}}"
+        amount: "{{inputs.payment.amount}}"
+    timeout:
+      startToClose: 10s
+    retry:
+      count: 3
+      initialInterval: 2s
+      backoffCoefficient: 2.0
+
+  # Step 3: Process payment (only if fraud check passes)
+  - id: process_payment
+    activity: processPayment
+    dependsOn: ["fraud_check"]
+    when: "{{step.fraud_check.result.riskScore}} < 0.5"
+    input:
+      amount: "{{inputs.payment.amount}}"
+      currency: "{{inputs.payment.currency}}"
+      paymentMethod: "{{inputs.payment.paymentMethod}}"
+      description: "Payment for customer {{inputs.payment.customerId}}"
+    timeout:
+      startToClose: 30s
+    retry:
+      count: 3
+      initialInterval: 5s
+      backoffCoefficient: 2.0
+
+  # Step 4: Send success notification
+  - id: send_success_email
+    activity: sendEmail
+    dependsOn: ["process_payment"]
+    when: "{{step.process_payment.result.status}} == 'completed'"
+    input:
+      to: "{{inputs.customer.email}}"
+      subject: "Payment Successful"
+      body: |
+        Dear {{inputs.customer.name}},
+        
+        Your payment of {{inputs.payment.amount}} {{inputs.payment.currency}} has been processed successfully.
+        
+        Transaction ID: {{step.process_payment.result.transactionId}}
+        
+        Thank you for your business!
+    retry:
+      count: 2
+      initialInterval: 3s
+
+  # Step 5: Log transaction
+  - id: log_transaction
+    activity: logMessage
+    dependsOn: ["process_payment"]
+    input:
+      level: "info"
+      message: "Payment processed"
+      context:
+        transactionId: "{{step.process_payment.result.transactionId}}"
+        customerId: "{{inputs.payment.customerId}}"
+        amount: "{{inputs.payment.amount}}"
+        currency: "{{inputs.payment.currency}}"
+        status: "{{step.process_payment.result.status}}"
+
+  # Step 6: Handle fraud case (only if fraud detected)
+  - id: send_fraud_alert
+    activity: sendEmail
+    dependsOn: ["fraud_check"]
+    when: "{{step.fraud_check.result.riskScore}} >= 0.5"
+    input:
+      to: "security@example.com"
+      subject: "Fraud Alert - High Risk Transaction"
+      body: |
+        High risk transaction detected:
+        
+        Customer ID: {{inputs.payment.customerId}}
+        Amount: {{inputs.payment.amount}} {{inputs.payment.currency}}
+        Risk Score: {{step.fraud_check.result.riskScore}}
+        
+        Please review immediately.
