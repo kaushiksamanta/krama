@@ -6,7 +6,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { parse as parseYaml } from 'yaml';
 import { WorkflowDefinition, StepDefinition } from './types.js';
 
@@ -39,13 +38,10 @@ export async function loadWorkflowDefinition(filePath: string): Promise<Workflow
       workflow.version = '1.0.0';
     }
     
-    // Validate each step
+    // Validate each step has an id
     for (const step of workflow.steps) {
       if (!step.id) {
         throw new Error('All steps must have an id');
-      }
-      if (!step.activity) {
-        throw new Error(`Step '${step.id}' is missing required 'activity' field`);
       }
     }
     
@@ -62,12 +58,28 @@ export function validateWorkflowSteps(steps: StepDefinition[]): void {
   const stepIds = new Set<string>();
   const dependencies = new Map<string, string[]>();
   
-  // First pass: collect all step IDs and their dependencies
+  // First pass: collect all step IDs, validate step structure, and collect dependencies
   for (const step of steps) {
     if (stepIds.has(step.id)) {
       throw new Error(`Duplicate step ID: ${step.id}`);
     }
     stepIds.add(step.id);
+    
+    // Validate based on step type
+    const stepType = step.type || 'activity';
+    
+    if (stepType === 'code') {
+      // Code steps require a 'code' field
+      if (!step.code) {
+        throw new Error(`Step '${step.id}' is of type 'code' but missing required 'code' field`);
+      }
+    } else if (stepType === 'activity') {
+      // Activity steps require an 'activity' field
+      if (!step.activity) {
+        throw new Error(`Step '${step.id}' is missing required 'activity' field`);
+      }
+    }
+    // Signal steps don't require activity or code
     
     if (step.dependsOn) {
       dependencies.set(step.id, step.dependsOn);

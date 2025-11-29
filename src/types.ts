@@ -2,8 +2,9 @@
  * Type of workflow step.
  * - 'activity': Execute a Temporal activity
  * - 'signal': Wait for an external signal
+ * - 'code': Execute inline JavaScript code (like n8n)
  */
-export type StepType = 'activity' | 'signal';
+export type StepType = 'activity' | 'signal' | 'code';
 
 /**
  * Definition of a single workflow step.
@@ -11,13 +12,42 @@ export type StepType = 'activity' | 'signal';
  */
 export interface StepDefinition {
   id: string;
-  activity: string;
+  /**
+   * Activity name to execute. Required for 'activity' type steps.
+   * For 'code' type steps, this is optional (defaults to 'executeCode').
+   */
+  activity?: string;
+  /**
+   * Input data passed to the step. Available as `input` in code steps.
+   */
   input?: Record<string, any>;
+  /**
+   * JavaScript code to execute. Required for 'code' type steps.
+   * The code has access to:
+   * - `input`: The resolved input object
+   * - `context`: { inputs, steps } - workflow inputs and previous step results
+   * - `require`: Limited module access (lodash, moment, etc.)
+   * 
+   * Must return a value which becomes the step's output.
+   * 
+   * @example
+   * ```javascript
+   * // Transform data
+   * const result = input.items.map(item => ({
+   *   ...item,
+   *   processed: true,
+   *   timestamp: new Date().toISOString()
+   * }));
+   * return { items: result, count: result.length };
+   * ```
+   */
+  code?: string;
   dependsOn?: string[];
   /**
    * Optional type of step. Defaults to 'activity'.
    * - 'activity': normal activity execution
    * - 'signal': wait for an external signal to provide the result
+   * - 'code': execute inline JavaScript code
    */
   type?: StepType;
   /**

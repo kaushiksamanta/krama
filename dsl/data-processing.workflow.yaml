@@ -1,0 +1,154 @@
+name: data-processing-pipeline
+version: 1.0.0
+description: |
+  Example workflow demonstrating code steps (like n8n).
+  Steps behave like functions with input and JavaScript code execution.
+
+inputs:
+  orders:
+    - id: "order-001"
+      customerId: "cust-123"
+      items:
+        - productId: "prod-a"
+          quantity: 2
+          price: 29.99
+        - productId: "prod-b"
+          quantity: 1
+          price: 49.99
+    - id: "order-002"
+      customerId: "cust-456"
+      items:
+        - productId: "prod-c"
+          quantity: 3
+          price: 19.99
+  taxRate: 0.08
+  discountThreshold: 100
+
+steps:
+  # Step 1: Calculate order totals using code
+  - id: calculate_totals
+    type: code
+    input:
+      orders: "{{inputs.orders}}"
+      taxRate: "{{inputs.taxRate}}"
+    code: |
+      // Calculate subtotal for each order
+      const processedOrders = input.orders.map(order => {
+        const subtotal = order.items.reduce((sum, item) => {
+          return sum + (item.quantity * item.price);
+        }, 0);
+        
+        const tax = subtotal * input.taxRate;
+        const total = subtotal + tax;
+        
+        return {
+          ...order,
+          subtotal: Math.round(subtotal * 100) / 100,
+          tax: Math.round(tax * 100) / 100,
+          total: Math.round(total * 100) / 100
+        };
+      });
+      
+      console.log('Processed orders:', processedOrders.length);
+      
+      return {
+        orders: processedOrders,
+        grandTotal: processedOrders.reduce((sum, o) => sum + o.total, 0)
+      };
+
+  # Step 2: Apply discounts based on threshold
+  - id: apply_discounts
+    type: code
+    dependsOn: ["calculate_totals"]
+    input:
+      orders: "{{step.calculate_totals.result.orders}}"
+      threshold: "{{inputs.discountThreshold}}"
+    code: |
+      const discountRate = 0.10; // 10% discount
+      
+      const ordersWithDiscounts = input.orders.map(order => {
+        if (order.subtotal >= input.threshold) {
+          const discount = order.total * discountRate;
+          return {
+            ...order,
+            discountApplied: true,
+            discount: Math.round(discount * 100) / 100,
+            finalTotal: Math.round((order.total - discount) * 100) / 100
+          };
+        }
+        return {
+          ...order,
+          discountApplied: false,
+          discount: 0,
+          finalTotal: order.total
+        };
+      });
+      
+      return { orders: ordersWithDiscounts };
+
+  # Step 3: Generate summary report
+  - id: generate_report
+    type: code
+    dependsOn: ["apply_discounts"]
+    input:
+      orders: "{{step.apply_discounts.result.orders}}"
+    code: |
+      const totalOrders = input.orders.length;
+      const totalRevenue = input.orders.reduce((sum, o) => sum + o.finalTotal, 0);
+      const totalDiscounts = input.orders.reduce((sum, o) => sum + o.discount, 0);
+      const ordersWithDiscount = input.orders.filter(o => o.discountApplied).length;
+      
+      const report = {
+        summary: {
+          totalOrders,
+          ordersWithDiscount,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          totalDiscounts: Math.round(totalDiscounts * 100) / 100,
+          averageOrderValue: Math.round((totalRevenue / totalOrders) * 100) / 100
+        },
+        orders: input.orders.map(o => ({
+          id: o.id,
+          customerId: o.customerId,
+          itemCount: o.items.length,
+          subtotal: o.subtotal,
+          tax: o.tax,
+          discount: o.discount,
+          finalTotal: o.finalTotal
+        })),
+        generatedAt: new Date().toISOString()
+      };
+      
+      console.log('Report generated:', report.summary);
+      
+      return report;
+
+  # Step 4: Filter high-value orders (conditional)
+  - id: filter_high_value
+    type: code
+    dependsOn: ["apply_discounts"]
+    when: "{{step.apply_discounts.result.orders}}"
+    input:
+      orders: "{{step.apply_discounts.result.orders}}"
+    code: |
+      const highValueThreshold = 80;
+      
+      const highValueOrders = input.orders.filter(
+        order => order.finalTotal >= highValueThreshold
+      );
+      
+      return {
+        highValueOrders,
+        count: highValueOrders.length,
+        totalValue: highValueOrders.reduce((sum, o) => sum + o.finalTotal, 0)
+      };
+
+  # Step 5: Log the results (using traditional activity)
+  - id: log_results
+    activity: logMessage
+    dependsOn: ["generate_report", "filter_high_value"]
+    input:
+      level: "info"
+      message: "Data processing pipeline completed"
+      context:
+        reportSummary: "{{step.generate_report.result.summary}}"
+        highValueCount: "{{step.filter_high_value.result.count}}"

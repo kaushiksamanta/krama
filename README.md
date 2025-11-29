@@ -91,7 +91,17 @@ npm run build            # Build TypeScript
 
 ## Workflow Definition
 
-Workflows are defined in YAML files with the following structure:
+Workflows are defined in YAML files with the following structure.
+
+### Step Types
+
+The engine supports three types of steps:
+
+| Type | Description |
+|------|-------------|
+| `activity` | Execute a registered Temporal activity (default) |
+| `signal` | Wait for an external signal/event |
+| `code` | Execute inline JavaScript code (like n8n) |
 
 ```yaml
 name: workflow-name
@@ -172,6 +182,51 @@ Use the `when` field to conditionally execute steps:
   when: "{{step.payment.result.status}} == 'failed'"  # Only if payment failed
 ```
 
+### Code Steps (n8n-style)
+
+Execute inline JavaScript code with full access to inputs and previous step results:
+
+```yaml
+- id: transform_data
+  type: code
+  input:
+    items: "{{inputs.items}}"
+    multiplier: 2
+  code: |
+    // Access input data
+    const processed = input.items.map(item => ({
+      ...item,
+      value: item.value * input.multiplier,
+      processedAt: new Date().toISOString()
+    }));
+    
+    // Access workflow context
+    console.log('Workflow inputs:', context.inputs);
+    console.log('Previous steps:', Object.keys(context.steps));
+    
+    // Return value becomes step output
+    return {
+      items: processed,
+      count: processed.length
+    };
+```
+
+**Available in Code Steps:**
+
+| Variable | Description |
+|----------|-------------|
+| `input` | Resolved input object from the step definition |
+| `context.inputs` | Original workflow inputs |
+| `context.steps` | Results from all completed steps |
+| `console` | Logging (log, info, warn, error, debug) |
+| `JSON`, `Math`, `Date`, `Array`, `Object` | Standard JavaScript globals |
+
+**Code Step Features:**
+- Async/await support
+- Automatic error handling with retries
+- Console output captured in logs
+- Sandboxed execution for security
+
 ### Signal Steps
 
 Wait for external events or human approvals:
@@ -197,6 +252,41 @@ await handle.signal('step', 'approval', { approved: true, comment: 'LGTM' });
 ```
 
 ## Examples
+
+### Data Processing Pipeline (Code Steps)
+
+See `dsl/data-processing.workflow.yaml` for a complete example using code steps:
+
+```yaml
+name: data-processing-pipeline
+steps:
+  # Calculate totals with JavaScript
+  - id: calculate_totals
+    type: code
+    input:
+      orders: "{{inputs.orders}}"
+      taxRate: "{{inputs.taxRate}}"
+    code: |
+      const processedOrders = input.orders.map(order => {
+        const subtotal = order.items.reduce((sum, item) => 
+          sum + (item.quantity * item.price), 0);
+        const tax = subtotal * input.taxRate;
+        return { ...order, subtotal, tax, total: subtotal + tax };
+      });
+      return { orders: processedOrders };
+
+  # Use previous step results
+  - id: apply_discounts
+    type: code
+    dependsOn: ["calculate_totals"]
+    input:
+      orders: "{{step.calculate_totals.result.orders}}"
+    code: |
+      return input.orders.map(order => ({
+        ...order,
+        discount: order.total > 100 ? order.total * 0.1 : 0
+      }));
+```
 
 ### User Registration Workflow
 

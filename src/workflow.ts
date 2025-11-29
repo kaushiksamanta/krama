@@ -188,6 +188,77 @@ export async function runWorkflow(definition: {
         continue;
       }
 
+      // Handle code-type steps (execute JavaScript code via executeCode activity)
+      if (step.type === 'code') {
+        if (!step.code) {
+          throw new Error(`Step '${stepId}' is of type 'code' but missing 'code' field`);
+        }
+
+        // Build the context for code execution
+        const codeContext = {
+          inputs: context.inputs,
+          steps: Object.entries(context.results).reduce((acc, [id, result]) => ({
+            ...acc,
+            [id]: result.output
+          }), {} as Record<string, any>)
+        };
+
+        // Configure retry policy for code execution
+        const baseInitialInterval = step.retry?.initialInterval ?? '1s';
+        const baseBackoff = step.retry?.backoffCoefficient ?? 2.0;
+        const maximumAttempts =
+          step.retry?.maximumAttempts ??
+          (step.retry?.count !== undefined ? step.retry.count + 1 : 2);
+
+        const retryPolicy = {
+          initialInterval: baseInitialInterval,
+          backoffCoefficient: baseBackoff,
+          maximumAttempts,
+        };
+
+        let lastError: Error | undefined;
+        for (let attempt = 1; attempt <= retryPolicy.maximumAttempts; attempt++) {
+          try {
+            const stepProxy = proxyActivities<Record<string, (input: any) => Promise<any>>>(
+              {
+                startToCloseTimeout: step.timeout?.startToClose ?? '1 hour',
+                taskQueue,
+              }
+            );
+
+            stepResult.attempt = attempt;
+            const codeResult = await stepProxy.executeCode({
+              code: step.code,
+              input: activityInput,
+              context: codeContext,
+              timeout: step.timeout?.startToClose ? parseDurationToMs(step.timeout.startToClose) : 30000,
+            });
+
+            // The result from executeCode contains { result, logs, executionTime }
+            // We extract just the result as the step output
+            stepResult.output = codeResult.result;
+            break;
+          } catch (error) {
+            lastError = error as Error;
+            if (attempt < retryPolicy.maximumAttempts) {
+              const delayMs = Math.min(
+                retryPolicy.initialInterval ?
+                  parseDurationToMs(retryPolicy.initialInterval) * Math.pow(retryPolicy.backoffCoefficient, attempt - 1) :
+                  1000 * Math.pow(2, attempt - 1),
+                5 * 60 * 1000 // Max 5 minutes
+              );
+              await sleep(delayMs);
+            } else {
+              throw lastError;
+            }
+          }
+        }
+
+        results[stepId] = stepResult;
+        context.results[stepId] = stepResult;
+        continue;
+      }
+
       // Configure retry policy
       const baseInitialInterval = step.retry?.initialInterval ?? '1s';
       const baseBackoff = step.retry?.backoffCoefficient ?? 2.0;
