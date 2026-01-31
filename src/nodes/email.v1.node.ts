@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NodeDefinition, NodeContext, NodeExecutionError } from './types.js';
+import { NodeDefinition, NodeContext, NodeExecutionError } from '../types/node.js';
 
 // ============================================================
 // Email Node v1

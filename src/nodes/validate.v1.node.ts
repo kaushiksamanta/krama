@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import vm from 'vm';
 import { get } from 'lodash-es';
-import { NodeDefinition, NodeContext } from './types.js';
+import { NodeDefinition, NodeContext } from '../types/node.js';
 
 // ============================================================
 // Validate Node v1

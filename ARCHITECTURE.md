@@ -4,35 +4,307 @@
 
 The Temporal Workflow Engine is a declarative workflow orchestration system that executes YAML-defined workflows as Directed Acyclic Graphs (DAGs). It leverages Temporal's durability and reliability while providing a simple, code-free workflow definition experience.
 
+## High-Level Architecture
+
+```mermaid
+flowchart TB
+    subgraph Engine["WORKFLOW ENGINE"]
+        YAML["YAML DSL<br/>Definitions"]
+        Loader["Loader<br/>(loader.ts)"]
+        Worker["Temporal Worker<br/>(startWorkflow.ts)"]
+        WE["WorkflowExecutor<br/>(WorkflowExecutor.ts)"]
+        SE["StepExecutor<br/>(StepExecutor.ts)"]
+        
+        subgraph Nodes["Node Plugins"]
+            HTTP["HTTP"]
+            Code["Code"]
+            Log["Log"]
+            Email["Email"]
+            Validate["Validate"]
+            Transform["Transform"]
+            Wait["Wait"]
+        end
+    end
+    
+    YAML --> Loader
+    Loader --> Worker
+    Worker --> WE
+    WE --> SE
+    SE --> Nodes
+```
+
+## Directory Structure
+
+```
+src/
+├── types/                    # Centralized type definitions
+│   ├── index.ts              # Main export (re-exports all types)
+│   ├── core.ts               # StepDefinition, StepResult, WorkflowContext
+│   ├── node.ts               # NodeDefinition, NodeContext, NodeExecutionError
+│   └── workflow.ts           # ExecutorWorkflowDefinition, TemplateContext
+│
+├── workflow/                 # Workflow execution module
+│   ├── index.ts              # Entry point, exports runWorkflow
+│   ├── WorkflowExecutor.ts   # Orchestrates DAG execution
+│   ├── StepExecutor.ts       # Handles individual step execution
+│   └── utils.ts              # Template rendering, duration parsing
+│
+├── nodes/                    # Plugin-based node system
+│   ├── index.ts              # Node registry, activity wrapper creation
+│   ├── code.v1.node.ts       # Execute inline JavaScript
+│   ├── http.v1.node.ts       # HTTP requests
+│   ├── log.v1.node.ts        # Audit logging
+│   ├── email.v1.node.ts      # Email sending
+│   ├── validate.v1.node.ts   # Data validation
+│   ├── wait.v1.node.ts       # Delay/sleep
+│   └── transform.v1.node.ts  # Data transformation
+│
+├── workflow.ts               # Re-exports from workflow/
+├── types.ts                  # Re-exports from types/
+├── loader.ts                 # YAML DSL parser
+├── toposort.ts               # DAG validation & topological sort
+└── startWorkflow.ts          # Temporal worker entry point
+```
+
+## Class Diagram
+
+```mermaid
+classDiagram
+    class WorkflowExecutor {
+        -definition: ExecutorWorkflowDefinition
+        -dag: WorkflowDAG
+        -stepExecutor: StepExecutor
+        -results: Record~string, StepResult~
+        -context: WorkflowContext
+        -signalResults: Record~string, unknown~
+        -isCancelled: boolean
+        +execute() Promise~Record~
+        -executeStep(stepId) Promise~void~
+        -executeSignalStep(stepId, result) Promise~void~
+        -skipStep(result, reason) void
+        -saveResult(stepId, result) void
+    }
+
+    class StepExecutor {
+        -config: StepExecutorConfig
+        +checkDependencies(deps, results)
+        +checkCondition(step, ctx)
+        +prepareInput(step, ctx)
+        +buildNodeContext(stepId, inputs, results)
+        +createActivityProxy(step)
+        +executeCodeStep(step, stepId, ctx)
+        +executeActivityStep(step, stepId, input, ctx)
+    }
+
+    class WorkflowDAG {
+        -graph: DepGraph
+        -steps: Map~string, StepDefinition~
+        +getExecutionOrder() string[]
+        +getStep(id) StepDefinition
+        +getDependencies(id) Set~string~
+    }
+
+    class NodeDefinition {
+        <<interface>>
+        +name: string
+        +description: string
+        +version: string
+        +inputSchema: ZodType
+        +outputSchema: ZodType
+        +retryPolicy: RetryPolicy
+        +execute(input, context) Promise
+    }
+
+    class HTTPNode {
+        +execute(input, context)
+    }
+
+    class CodeNode {
+        +execute(input, context)
+    }
+
+    class TransformNode {
+        +execute(input, context)
+    }
+
+    WorkflowExecutor --> StepExecutor : uses
+    WorkflowExecutor --> WorkflowDAG : uses
+    StepExecutor --> NodeDefinition : calls
+    HTTPNode ..|> NodeDefinition : implements
+    CodeNode ..|> NodeDefinition : implements
+    TransformNode ..|> NodeDefinition : implements
+```
+
+## Sequence Diagram: Workflow Execution
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Worker
+    participant WE as WorkflowExecutor
+    participant SE as StepExecutor
+    participant Node as Node Plugin
+
+    Client->>Worker: start workflow
+    Worker->>WE: new(definition)
+    WE->>SE: new(config)
+    Worker->>WE: execute()
+    
+    loop For each step in topological order
+        WE->>SE: checkDependencies()
+        SE-->>WE: {shouldSkip, reason}
+        WE->>SE: checkCondition()
+        SE-->>WE: {shouldSkip, reason}
+        WE->>SE: prepareInput()
+        SE-->>WE: activityInput
+        WE->>SE: executeActivityStep()
+        SE->>Node: execute(input, context)
+        Node-->>SE: result
+        SE-->>WE: output
+        WE->>WE: saveResult()
+    end
+    
+    WE-->>Worker: results
+    Worker-->>Client: workflow results
+```
+
+## Node Plugin Architecture
+
+```mermaid
+flowchart TB
+    subgraph Registry["Node Registry"]
+        NR["Map of name to node"]
+    end
+    
+    subgraph Loading["Node Loading"]
+        LN["loadNodes - Auto-discover *.node.ts"]
+        RN["registerNode - Manual registration"]
+    end
+    
+    subgraph Activities["Activity Creation"]
+        CNA["createNodeActivities - Wrap for Temporal"]
+        AW["Activity Wrapper"]
+    end
+    
+    LN --> NR
+    RN --> NR
+    NR --> CNA
+    CNA --> AW
+    
+    AW --> |"1. Validate input"| ZOD["Zod Schema"]
+    AW --> |"2. Create logger"| LOG["NodeLogger"]
+    AW --> |"3. Execute"| NODE["Node.execute"]
+    AW --> |"4. Return"| RES["Result"]
+```
+
+### Node Execution Flow
+
+```mermaid
+flowchart LR
+    Input["Input - raw"] --> Validate["Zod Validation"]
+    Validate --> Execute["Node execute"]
+    Execute --> Output["Output - typed"]
+    
+    Validate -.-> |"on error"| VErr["Validation Error"]
+    Execute -.-> |"receives"| Ctx["NodeContext"]
+    
+    subgraph NodeContext
+        direction TB
+        inputs["workflowInputs"]
+        results["stepResults"]
+        logger["logger"]
+        workflow["workflow id/name"]
+        step["step id/attempt"]
+    end
+```
+
 ## Core Components
 
-### 1. Workflow Runner (`src/workflow.ts`)
+### 1. Workflow Module (`src/workflow/`)
 
-The heart of the engine - a Temporal workflow function that:
+The workflow execution module is structured as follows:
 
-- **Parses DAG**: Validates and topologically sorts workflow steps
-- **Executes Steps**: Runs activities in dependency order with parallel execution
-- **Handles Signals**: Supports external events and human-in-the-loop workflows
-- **Manages State**: Tracks step results and makes them available for templating
-- **Error Handling**: Implements retry logic and dependency propagation
+#### WorkflowExecutor (`WorkflowExecutor.ts`)
 
-**Key Features:**
-- Conditional execution via `when` clauses
-- Per-step timeout configuration
-- Mustache templating for dynamic inputs
-- Signal-based steps for external events
+Orchestrates the entire workflow execution:
 
-### 2. Activity Registry (`src/activities.ts`)
+- **DAG Management**: Creates and traverses the workflow DAG
+- **Signal Handling**: Sets up handlers for cancel and step signals
+- **Step Orchestration**: Iterates through steps in topological order
+- **State Management**: Tracks results and context across steps
 
-Collection of reusable activity functions that:
+```typescript
+class WorkflowExecutor {
+  constructor(definition: ExecutorWorkflowDefinition)
+  async execute(): Promise<Record<string, StepResult>>
+  private async executeStep(stepId: string): Promise<void>
+  private async executeSignalStep(stepId: string, result: StepResult): Promise<void>
+  private skipStep(result: StepResult, reason: string): void
+  private saveResult(stepId: string, result: StepResult): void
+}
+```
 
-- Run in the worker process (not in workflow)
-- Can perform I/O, API calls, database operations
-- Are automatically registered and available to workflows
-- Can use non-deterministic operations
+#### StepExecutor (`StepExecutor.ts`)
 
-**Extensibility:**
-Add new activities by simply adding functions to the `activities` object.
+Handles individual step execution:
+
+- **Dependency Checking**: Validates step dependencies are met
+- **Condition Evaluation**: Evaluates `when` clauses
+- **Input Preparation**: Renders Mustache templates
+- **Activity Execution**: Creates Temporal activity proxies with retry policies
+
+```typescript
+class StepExecutor {
+  constructor(config: StepExecutorConfig)
+  checkDependencies(deps: Set<string>, results: Record<string, StepResult>)
+  checkCondition(step: StepDefinition, ctx: TemplateContext)
+  prepareInput(step: StepDefinition, ctx: TemplateContext)
+  buildNodeContext(stepId: string, inputs: Record, results: Record)
+  createActivityProxy(step: StepDefinition)
+  async executeCodeStep(step: StepDefinition, stepId: string, ctx: NodeContext)
+  async executeActivityStep(step: StepDefinition, stepId: string, input: Record, ctx: NodeContext)
+}
+```
+
+#### Utils (`utils.ts`)
+
+Utility functions for workflow execution:
+
+- `parseDurationToMs(duration)` - Parse duration strings using `ms` library
+- `buildTemplateContext(inputs, results)` - Build Mustache context
+- `renderValue(value, context)` - Recursively render templates
+- `resolvePath(obj, path)` - Resolve dot-notation paths
+- `evaluateCondition(condition, context)` - Evaluate when clauses
+
+### 2. Node Plugin System (`src/nodes/`)
+
+Plugin-based architecture for extensible activities:
+
+#### Node Definition Interface
+
+```typescript
+interface NodeDefinition<TInput, TOutput> {
+  name: string;                    // Unique node name
+  description: string;             // Human-readable description
+  version: string;                 // Semver version
+  inputSchema?: ZodType<TInput>;   // Input validation
+  outputSchema?: ZodType<TOutput>; // Output documentation
+  retryPolicy?: RetryPolicy;       // Default retry config
+  execute(input: TInput, context: NodeContext): Promise<TOutput>;
+}
+```
+
+#### Available Nodes
+
+| Node | Description | Key Features |
+|------|-------------|--------------|
+| `http` | HTTP requests | GET/POST/PUT/DELETE, headers, body |
+| `code` | JavaScript execution | Sandboxed VM, async support |
+| `log` | Audit logging | Structured JSON output |
+| `email` | Send emails | SMTP or simulation mode |
+| `validate` | Data validation | Required, types, patterns, custom |
+| `wait` | Delay execution | Duration strings (5s, 1m, 2h) |
+| `transform` | Data transformation | pick, omit, map, filter, sort |
 
 ### 3. DSL Loader (`src/loader.ts`)
 
@@ -53,51 +325,32 @@ Ensures workflow integrity:
 - Provides topological execution order
 - Uses `dependency-graph` library
 
-### 5. Type Definitions (`src/types.ts`)
+### 5. Type System (`src/types/`)
 
-TypeScript interfaces for:
-- `WorkflowDefinition` - Complete workflow structure
-- `StepDefinition` - Individual step configuration
-- `StepResult` - Execution results
-- `WorkflowContext` - Templating context
+Centralized TypeScript types organized by domain:
+
+| File | Types |
+|------|-------|
+| `core.ts` | `StepDefinition`, `StepResult`, `WorkflowContext`, `WorkflowDefinition` |
+| `node.ts` | `NodeDefinition`, `NodeContext`, `NodeLogger`, `NodeExecutionError` |
+| `workflow.ts` | `ExecutorWorkflowDefinition`, `TemplateContext`, `NodeActivityResult` |
 
 ## Data Flow
 
-```
-┌─────────────────┐
-│  YAML File      │
-│  (DSL)          │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Loader         │
-│  - Parse YAML   │
-│  - Validate     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  DAG Validator  │
-│  - Check cycles │
-│  - Topo sort    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Workflow       │
-│  Runner         │
-│  - Execute DAG  │
-│  - Handle retry │
-│  - Templating   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Activities     │
-│  - Business     │
-│    logic        │
-└─────────────────┘
+```mermaid
+flowchart TD
+    YAML["YAML File<br/>(DSL)"]
+    Loader["Loader<br/>Parse YAML, Validate"]
+    DAG["WorkflowDAG<br/>Check cycles, Topo sort"]
+    WE["WorkflowExecutor<br/>Setup signals, Iterate steps"]
+    SE["StepExecutor<br/>Check deps, Render input, Call activity"]
+    Node["Node Plugin<br/>Validate, Execute, Return result"]
+    
+    YAML --> Loader
+    Loader --> DAG
+    DAG --> WE
+    WE --> SE
+    SE --> Node
 ```
 
 ## Execution Model

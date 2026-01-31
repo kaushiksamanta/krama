@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import vm from 'vm';
-import { NodeDefinition, NodeContext } from './types.js';
+import { NodeDefinition, NodeContext } from '../types/node.js';
 
 // ============================================================
 // Code Node v1

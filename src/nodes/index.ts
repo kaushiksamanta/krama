@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL, fileURLToPath } from 'url';
-import { NodeDefinition, NodeContext, NodeLogger, NodeExecutionError } from './types.js';
+import { NodeDefinition, NodeContext, NodeLogger, NodeExecutionError } from '../types/node.js';
 
 // Store all registered nodes (name -> version -> node)
 const nodeRegistry: Map<string, Map<number, NodeDefinition>> = new Map();
@@ -188,4 +188,4 @@ export async function loadNodes(nodesDir: string = __dirname): Promise<void> {
 }
 
 // Re-export types
-export * from './types.js';
+export * from '../types/node.js';

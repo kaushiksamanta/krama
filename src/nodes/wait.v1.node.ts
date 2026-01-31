@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NodeDefinition, NodeContext } from './types.js';
+import { NodeDefinition, NodeContext } from '../types/node.js';
 
 // ============================================================
 // Wait Node v1

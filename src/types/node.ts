@@ -1,3 +1,7 @@
+/**
+ * Node plugin architecture types - definitions, context, and execution.
+ */
+
 import { z } from 'zod';
 
 // ============================================================
@@ -40,8 +44,8 @@ export const StepMetaSchema = z.object({
  * Used for validation when passing context between boundaries.
  */
 export const NodeContextSchema = z.object({
-  workflowInputs: z.record(z.unknown()),
-  stepResults: z.record(z.unknown()),
+  workflowInputs: z.record(z.string(), z.unknown()),
+  stepResults: z.record(z.string(), z.unknown()),
   workflow: WorkflowMetaSchema,
   step: StepMetaSchema,
 });

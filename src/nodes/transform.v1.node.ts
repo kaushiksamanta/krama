@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import vm from 'vm';
-import { NodeDefinition, NodeContext, NodeExecutionError } from './types.js';
+import { NodeDefinition, NodeContext, NodeExecutionError } from '../types/node.js';
 
 // ============================================================
 // Transform Node v1
