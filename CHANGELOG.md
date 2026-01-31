@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2025-11-20
 
 ### Added
-- Initial release of Temporal Workflow Engine
+- Initial release of Krama
 - YAML-based workflow definition DSL
 - DAG-based workflow execution with automatic dependency resolution
 - Mustache templating for dynamic input resolution
@@ -50,4 +50,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[1.0.0]: https://github.com/yourusername/temporal-workflow-engine/releases/tag/v1.0.0
+[1.0.0]: https://github.com/kaushiksamanta/Krama/releases/tag/v1.0.0

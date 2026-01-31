@@ -1,7 +1,7 @@
 {
-  "name": "temporal-workflow-engine",
+  "name": "krama",
   "version": "1.0.0",
-  "description": "A declarative, YAML-based workflow engine powered by Temporal for orchestrating complex workflows as DAGs",
+  "description": "Krama - A declarative, YAML-based workflow engine powered by Temporal for orchestrating complex workflows as DAGs",
   "main": "dist/index.js",
   "type": "module",
   "engines": {
@@ -35,16 +35,16 @@
     "automation",
     "pipeline"
   ],
-  "author": "Temporal Workflow Engine Contributors",
+  "author": "Krama Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/temporal-workflow-engine.git"
+    "url": "https://github.com/kaushiksamanta/Krama.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/temporal-workflow-engine/issues"
+    "url": "https://github.com/kaushiksamanta/Krama/issues"
   },
-  "homepage": "https://github.com/yourusername/temporal-workflow-engine#readme",
+  "homepage": "https://github.com/kaushiksamanta/Krama#readme",
   "dependencies": {
     "@temporalio/activity": "^1.12.3",
     "@temporalio/client": "^1.12.3",

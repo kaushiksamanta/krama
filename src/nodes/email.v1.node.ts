@@ -67,7 +67,7 @@ const emailNode: NodeDefinition<EmailInput, EmailOutput> = {
       const messageId = `simulated_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
       
       console.log('=== SIMULATED EMAIL ===');
-      console.log(`From: ${from || 'noreply@workflow-engine.local'}`);
+      console.log(`From: ${from || 'noreply@krama.local'}`);
       console.log(`To: ${toList.join(', ')}`);
       if (ccList.length > 0) console.log(`CC: ${ccList.join(', ')}`);
       if (bccList.length > 0) console.log(`BCC: ${bccList.join(', ')}`);

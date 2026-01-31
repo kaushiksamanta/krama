@@ -1,21 +1,25 @@
-# Temporal Workflow Engine
+# Krama
 
 <p align="center">
-  <strong>A declarative, YAML-based workflow engine powered by Temporal</strong>
+  <strong>क्रम | ক্রম — A declarative, YAML-based workflow engine powered by Temporal</strong>
+</p>
+
+<p align="center">
+  <em>"Krama" (Sanskrit: क्रम, Bengali: ক্রম) means "sequence," "order," or "step" — perfectly capturing the essence of workflow orchestration.</em>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#documentation">Documentation</a> •
-  <a href="#examples">Examples</a> •
+  <a href="#examples">Examples</a>
 </p>
 
 ---
 
 ## Overview
 
-A production-ready workflow engine that lets you define complex workflows in YAML and execute them as Directed Acyclic Graphs (DAGs) using Temporal. Perfect for orchestrating microservices, data pipelines, approval workflows, and more.
+Krama is a production-ready workflow engine that lets you define complex workflows in YAML and execute them as Directed Acyclic Graphs (DAGs) using Temporal. Perfect for orchestrating microservices, data pipelines, approval workflows, and more.
 
 ## Features
 
@@ -50,8 +54,8 @@ A production-ready workflow engine that lets you define complex workflows in YAM
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/temporal-workflow-engine.git
-cd temporal-workflow-engine
+git clone https://github.com/kaushiksamanta/Krama.git
+cd Krama
 
 # Install dependencies
 npm install
