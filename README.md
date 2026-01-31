@@ -76,10 +76,12 @@ That's it! Open http://localhost:8233 to see your workflow in the Temporal UI.
 
 ### Architecture
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+
 The engine consists of three main components:
 
-1. **Workflow Runner** (`src/workflow.ts`) - Executes DAG-based workflows with Temporal
-2. **Activity Registry** (`src/activities.ts`) - Defines reusable activity functions
+1. **Workflow Runner** (`src/workflow/`) - Executes DAG-based workflows with Temporal
+2. **Node Plugins** (`src/nodes/`) - Extensible activity implementations
 3. **DSL Loader** (`src/loader.ts`) - Parses and validates YAML workflow definitions
 
 ### Available Scripts
@@ -323,38 +325,33 @@ steps:
       subject: "Welcome {{inputs.user.name}}!"
 ```
 
-### Built-in Activities
+### Built-in Nodes
 
-The engine includes these demo activities (see `src/activities.ts`):
+The engine includes these node plugins (see `src/nodes/`):
 
-- **`validateInput`** - Validates data against rules
-- **`createUser`** - Simulates user creation
-- **`sendEmail`** - Simulates email sending
-- **`processPayment`** - Simulates payment processing
-- **`logMessage`** - Logs structured messages
-- **`fetchData`** - Simulates API calls
-- **`wait`** - Delays execution
+- **`http`** - Make HTTP requests to external APIs
+- **`code`** - Execute inline JavaScript in a sandboxed environment
+- **`email`** - Send emails via SMTP
+- **`log`** - Structured audit logging
+- **`validate`** - Data validation with rules
+- **`transform`** - Data transformation (pick, omit, map, filter, sort)
+- **`wait`** - Delay execution
 
-### Adding Custom Activities
+### Adding Custom Nodes
 
-1. Add your activity to `src/activities.ts`:
+1. Create a new node using the CLI:
 
-```typescript
-export const activities = {
-  // ... existing activities
-  
-  async myCustomActivity(input: { data: string }): Promise<{ result: string }> {
-    // Your logic here
-    return { result: `Processed: ${input.data}` };
-  }
-};
+```bash
+npm run create-node my-custom-node
 ```
 
-2. Use it in your workflow YAML:
+2. Implement your node in `src/nodes/my-custom-node.v1.node.ts`
+
+3. Use it in your workflow YAML:
 
 ```yaml
 - id: custom_step
-  activity: myCustomActivity
+  activity: my-custom-node
   input:
     data: "{{inputs.someValue}}"
 ```
@@ -399,20 +396,27 @@ npm run build
 ```
 .
 ├── src/
-│   ├── workflow.ts       # Workflow runner (Temporal workflow)
-│   ├── activities.ts     # Activity implementations
-│   ├── loader.ts         # YAML DSL parser
-│   ├── toposort.ts       # DAG validation and sorting
-│   ├── types.ts          # TypeScript type definitions
-│   └── startWorkflow.ts  # CLI and worker entrypoint
+│   ├── workflow/             # Workflow execution module
+│   │   ├── WorkflowExecutor.ts
+│   │   ├── StepExecutor.ts
+│   │   └── utils.ts
+│   ├── nodes/                # Node plugins
+│   │   ├── http.v1.node.ts
+│   │   ├── code.v1.node.ts
+│   │   ├── email.v1.node.ts
+│   │   └── ...
+│   ├── types/                # TypeScript type definitions
+│   ├── loader.ts             # YAML DSL parser
+│   ├── toposort.ts           # DAG validation and sorting
+│   └── startWorkflow.ts      # CLI and worker entrypoint
+├── docs/
+│   └── ARCHITECTURE.md       # Detailed architecture docs
 ├── dsl/
-│   └── example.workflow.yaml  # Example workflow definition
+│   └── example.workflow.yaml # Example workflow definition
 ├── client/
-│   └── startExampleWorkflow.ts  # Example client
+│   └── startExampleWorkflow.ts
 ├── tests/
-│   ├── toposort.test.ts  # DAG tests
-│   └── dsl.test.ts       # DSL validation tests
-└── docker-compose.yml    # Temporal + UI setup
+└── docker-compose.yml        # Temporal + UI setup
 ```
 
 ## Roadmap
