@@ -72,6 +72,22 @@ npm run example:client
 
 That's it! Open http://localhost:8233 to see your workflow in the Temporal UI.
 
+## Workflow Execution
+
+Here's what a workflow execution looks like in the Temporal UI:
+
+### Workflow Overview
+![Workflow Overview](images/workflow-1.png)
+
+### Workflow Timeline
+![Workflow Timeline](images/workflow-2.png)
+
+### Step Details
+![Step Details](images/workflow-3.png)
+
+### Workflow Results
+![Workflow Results](images/workflow-4.png)
+
 ## Documentation
 
 ### Architecture
