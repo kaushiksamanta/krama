@@ -2,8 +2,7 @@ import { Worker, NativeConnection } from '@temporalio/worker';
 import { WorkflowClient } from '@temporalio/client';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { activities } from './activities.js';
-import { runWorkflow } from './workflow.js';
+import { loadNodes, createNodeActivities } from './nodes/index.js';
 import { loadWorkflowDefinition } from './loader.js';
 
 // Get the directory name in ES module
@@ -15,7 +14,7 @@ export interface WorkflowInput {
   workflowId: string;
   taskQueue: string;
   workflowFile: string;
-  inputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
 }
 
 /**
@@ -46,10 +45,10 @@ export async function startWorkflow(options: WorkflowInput) {
     workflowId,
     args: [{
       steps: workflowDef.steps,
-      activities,
       inputs: { ...(workflowDef.inputs || {}), ...inputs },
       taskQueue,
       workflowId,
+      workflowName: workflowDef.name,
     }],
   });
   
@@ -73,13 +72,22 @@ export async function startWorkflow(options: WorkflowInput) {
  * Start a worker to process workflow and activity tasks
  */
 export async function startWorker(taskQueue: string = 'default') {
+  // Load and register all nodes from the nodes directory
+  const nodesDir = path.join(__dirname, 'nodes');
+  await loadNodes(nodesDir);
+  console.log('All nodes loaded and registered');
+
+  // Create Temporal activities from registered nodes
+  const nodeActivities = createNodeActivities();
+  console.log('Node activities created:', Object.keys(nodeActivities));
+
   // Register workflows and activities
   const worker = await Worker.create({
     connection: await NativeConnection.connect({ address: 'localhost:7233' }),
     taskQueue,
     // When using tsx in development, point directly at the TypeScript workflow file
     workflowsPath: new URL('./workflow.ts', import.meta.url).pathname,
-    activities,
+    activities: nodeActivities,
   });
   
   console.log(`Worker started on task queue: ${taskQueue}`);

@@ -1,0 +1,358 @@
+# ETL Data Pipeline Workflow
+# Extract data from multiple sources, transform, validate, and load to data warehouse
+name: etl-pipeline
+version: 1.0.0
+description: Data extraction, transformation, and loading pipeline with validation and error handling
+
+inputs:
+  pipeline:
+    name: "daily-sales-sync"
+    sourceDatabase: "production_db"
+    targetWarehouse: "analytics_dw"
+    batchSize: 1000
+    startDate: "2024-01-01"
+    endDate: "2024-01-31"
+  sources:
+    - name: "orders"
+      table: "sales_orders"
+      primaryKey: "order_id"
+    - name: "customers"
+      table: "customer_data"
+      primaryKey: "customer_id"
+    - name: "products"
+      table: "product_catalog"
+      primaryKey: "product_id"
+
+steps:
+  # Step 1: Validate pipeline configuration
+  - id: validate_config
+    activity: validate
+    input:
+      data: "{{inputs.pipeline}}"
+      rules:
+        required: ["name", "sourceDatabase", "targetWarehouse", "batchSize"]
+        types:
+          name: "string"
+          batchSize: "number"
+        custom: "data.batchSize > 0 && data.batchSize <= 10000"
+
+  # Step 2: Log pipeline start
+  - id: log_pipeline_start
+    activity: log
+    dependsOn: ["validate_config"]
+    when: "{{step.validate_config.result.isValid}}"
+    input:
+      message: "ETL Pipeline started"
+      level: "info"
+      data:
+        pipelineName: "{{inputs.pipeline.name}}"
+        startDate: "{{inputs.pipeline.startDate}}"
+        endDate: "{{inputs.pipeline.endDate}}"
+
+  # Step 3: Extract orders data
+  - id: extract_orders
+    activity: http
+    dependsOn: ["log_pipeline_start"]
+    input:
+      url: "https://{{inputs.pipeline.sourceDatabase}}.example.com/api/extract"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.dbApiToken}}"
+      body:
+        table: "sales_orders"
+        filters:
+          created_at_gte: "{{inputs.pipeline.startDate}}"
+          created_at_lte: "{{inputs.pipeline.endDate}}"
+        limit: "{{inputs.pipeline.batchSize}}"
+      timeout: 60000
+    retry:
+      count: 3
+      initialInterval: 5s
+      backoffCoefficient: 2.0
+
+  # Step 4: Extract customers data
+  - id: extract_customers
+    activity: http
+    dependsOn: ["log_pipeline_start"]
+    input:
+      url: "https://{{inputs.pipeline.sourceDatabase}}.example.com/api/extract"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.dbApiToken}}"
+      body:
+        table: "customer_data"
+        filters:
+          updated_at_gte: "{{inputs.pipeline.startDate}}"
+        limit: "{{inputs.pipeline.batchSize}}"
+      timeout: 60000
+    retry:
+      count: 3
+      initialInterval: 5s
+
+  # Step 5: Extract products data
+  - id: extract_products
+    activity: http
+    dependsOn: ["log_pipeline_start"]
+    input:
+      url: "https://{{inputs.pipeline.sourceDatabase}}.example.com/api/extract"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.dbApiToken}}"
+      body:
+        table: "product_catalog"
+        filters:
+          status: "active"
+        limit: "{{inputs.pipeline.batchSize}}"
+      timeout: 60000
+
+  # Step 6: Transform and clean orders data
+  - id: transform_orders
+    type: code
+    dependsOn: ["extract_orders"]
+    input:
+      rawData: "{{step.extract_orders.result.data}}"
+    code: |
+      const records = input.rawData.records || [];
+      
+      const transformed = records.map(order => ({
+        order_id: order.id,
+        customer_id: order.customer_id,
+        order_date: new Date(order.created_at).toISOString().split('T')[0],
+        total_amount: parseFloat(order.total) || 0,
+        currency: order.currency || 'USD',
+        status: order.status.toLowerCase(),
+        item_count: order.line_items?.length || 0,
+        shipping_country: order.shipping_address?.country || 'Unknown',
+        payment_method: order.payment?.method || 'unknown',
+        // Add derived fields
+        is_high_value: parseFloat(order.total) > 500,
+        fiscal_quarter: Math.ceil((new Date(order.created_at).getMonth() + 1) / 3),
+        _etl_timestamp: new Date().toISOString()
+      }));
+      
+      // Filter out invalid records
+      const valid = transformed.filter(r => r.order_id && r.customer_id);
+      const invalid = transformed.length - valid.length;
+      
+      console.log(`Transformed ${valid.length} orders, ${invalid} invalid records skipped`);
+      
+      return {
+        records: valid,
+        stats: {
+          total: records.length,
+          valid: valid.length,
+          invalid: invalid,
+          highValueOrders: valid.filter(r => r.is_high_value).length
+        }
+      };
+
+  # Step 7: Transform customers data
+  - id: transform_customers
+    type: code
+    dependsOn: ["extract_customers"]
+    input:
+      rawData: "{{step.extract_customers.result.data}}"
+    code: |
+      const records = input.rawData.records || [];
+      
+      const transformed = records.map(customer => ({
+        customer_id: customer.id,
+        email_hash: customer.email ? btoa(customer.email).slice(0, 20) : null,
+        first_name: customer.first_name?.trim(),
+        last_name: customer.last_name?.trim(),
+        country: customer.address?.country || 'Unknown',
+        city: customer.address?.city,
+        signup_date: new Date(customer.created_at).toISOString().split('T')[0],
+        customer_segment: customer.total_orders > 10 ? 'loyal' : 
+                         customer.total_orders > 3 ? 'regular' : 'new',
+        lifetime_value: parseFloat(customer.total_spent) || 0,
+        _etl_timestamp: new Date().toISOString()
+      }));
+      
+      const valid = transformed.filter(r => r.customer_id);
+      
+      console.log(`Transformed ${valid.length} customers`);
+      
+      return {
+        records: valid,
+        stats: {
+          total: records.length,
+          valid: valid.length,
+          bySegment: {
+            loyal: valid.filter(r => r.customer_segment === 'loyal').length,
+            regular: valid.filter(r => r.customer_segment === 'regular').length,
+            new: valid.filter(r => r.customer_segment === 'new').length
+          }
+        }
+      };
+
+  # Step 8: Transform products data
+  - id: transform_products
+    activity: transform
+    dependsOn: ["extract_products"]
+    input:
+      data: "{{step.extract_products.result.data.records}}"
+      operations:
+        - type: filter
+          config:
+            expression: "item.price > 0"
+        - type: map
+          config:
+            expression: "({ product_id: item.id, name: item.name, category: item.category, price: item.price, in_stock: item.inventory > 0 })"
+        - type: sort
+          config:
+            field: "category"
+            order: "asc"
+
+  # Step 9: Validate transformed data quality
+  - id: validate_data_quality
+    type: code
+    dependsOn: ["transform_orders", "transform_customers", "transform_products"]
+    input:
+      orders: "{{step.transform_orders.result}}"
+      customers: "{{step.transform_customers.result}}"
+      products: "{{step.transform_products.result.data}}"
+    code: |
+      const issues = [];
+      
+      // Check orders
+      if (input.orders.stats.invalid > input.orders.stats.total * 0.1) {
+        issues.push(`High invalid order rate: ${input.orders.stats.invalid}/${input.orders.stats.total}`);
+      }
+      
+      // Check for orphan orders (orders without matching customers)
+      const customerIds = new Set(input.customers.records.map(c => c.customer_id));
+      const orphanOrders = input.orders.records.filter(o => !customerIds.has(o.customer_id));
+      if (orphanOrders.length > 0) {
+        issues.push(`Found ${orphanOrders.length} orders with missing customer references`);
+      }
+      
+      // Check minimum record counts
+      if (input.orders.stats.valid < 10) {
+        issues.push('Very low order count - verify extraction');
+      }
+      
+      const passed = issues.length === 0;
+      
+      console.log(`Data quality check: ${passed ? 'PASSED' : 'FAILED'}`);
+      if (!passed) {
+        issues.forEach(i => console.log('Issue:', i));
+      }
+      
+      return {
+        passed,
+        issues,
+        summary: {
+          ordersCount: input.orders.stats.valid,
+          customersCount: input.customers.stats.valid,
+          productsCount: input.products.length
+        }
+      };
+
+  # Step 10: Load orders to warehouse
+  - id: load_orders
+    activity: http
+    dependsOn: ["validate_data_quality"]
+    when: "{{step.validate_data_quality.result.passed}}"
+    input:
+      url: "https://{{inputs.pipeline.targetWarehouse}}.example.com/api/load"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.warehouseApiToken}}"
+      body:
+        table: "fact_orders"
+        records: "{{step.transform_orders.result.records}}"
+        mode: "upsert"
+        primaryKey: "order_id"
+      timeout: 120000
+    retry:
+      count: 2
+      initialInterval: 10s
+
+  # Step 11: Load customers to warehouse
+  - id: load_customers
+    activity: http
+    dependsOn: ["validate_data_quality"]
+    when: "{{step.validate_data_quality.result.passed}}"
+    input:
+      url: "https://{{inputs.pipeline.targetWarehouse}}.example.com/api/load"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.warehouseApiToken}}"
+      body:
+        table: "dim_customers"
+        records: "{{step.transform_customers.result.records}}"
+        mode: "upsert"
+        primaryKey: "customer_id"
+      timeout: 120000
+
+  # Step 12: Load products to warehouse
+  - id: load_products
+    activity: http
+    dependsOn: ["validate_data_quality"]
+    when: "{{step.validate_data_quality.result.passed}}"
+    input:
+      url: "https://{{inputs.pipeline.targetWarehouse}}.example.com/api/load"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.warehouseApiToken}}"
+      body:
+        table: "dim_products"
+        records: "{{step.transform_products.result.data}}"
+        mode: "upsert"
+        primaryKey: "product_id"
+      timeout: 120000
+
+  # Step 13: Update data catalog
+  - id: update_catalog
+    activity: http
+    dependsOn: ["load_orders", "load_customers", "load_products"]
+    input:
+      url: "https://catalog.example.com/api/tables/refresh"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body:
+        tables: ["fact_orders", "dim_customers", "dim_products"]
+        pipelineRun: "{{inputs.pipeline.name}}"
+      timeout: 30000
+
+  # Step 14: Log pipeline completion
+  - id: log_pipeline_complete
+    activity: log
+    dependsOn: ["update_catalog"]
+    input:
+      message: "ETL Pipeline completed successfully"
+      level: "info"
+      data:
+        pipelineName: "{{inputs.pipeline.name}}"
+        ordersLoaded: "{{step.transform_orders.result.stats.valid}}"
+        customersLoaded: "{{step.transform_customers.result.stats.valid}}"
+        dataQualityPassed: "{{step.validate_data_quality.result.passed}}"
+
+  # Step 15: Send completion notification
+  - id: send_completion_notification
+    activity: email
+    dependsOn: ["log_pipeline_complete"]
+    input:
+      to: "{{inputs.notificationEmail}}"
+      subject: "ETL Pipeline Complete - {{inputs.pipeline.name}}"
+      body: |
+        <h1>ETL Pipeline Completed</h1>
+        <p><strong>Pipeline:</strong> {{inputs.pipeline.name}}</p>
+        <p><strong>Date Range:</strong> {{inputs.pipeline.startDate}} to {{inputs.pipeline.endDate}}</p>
+        
+        <h2>Summary</h2>
+        <ul>
+          <li>Orders Processed: {{step.transform_orders.result.stats.valid}}</li>
+          <li>Customers Processed: {{step.transform_customers.result.stats.valid}}</li>
+          <li>Data Quality: PASSED</li>
+        </ul>
+        
+        <p>All data has been loaded to the {{inputs.pipeline.targetWarehouse}} warehouse.</p>

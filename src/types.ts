@@ -20,7 +20,7 @@ export interface StepDefinition {
   /**
    * Input data passed to the step. Available as `input` in code steps.
    */
-  input?: Record<string, any>;
+  input?: Record<string, unknown>;
   /**
    * JavaScript code to execute. Required for 'code' type steps.
    * The code has access to:
@@ -87,7 +87,7 @@ export interface WorkflowDefinition {
   /** Optional workflow description */
   description?: string;
   /** Input schema definition */
-  inputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
   /** Array of step definitions forming a DAG */
   steps: StepDefinition[];
 }
@@ -101,7 +101,7 @@ export interface StepResult {
   /** Execution status */
   status: 'completed' | 'failed' | 'skipped';
   /** Activity output (if completed successfully) */
-  output?: any;
+  output?: unknown;
   /** Error message (if failed or skipped) */
   error?: string;
   /** Execution duration in milliseconds */
@@ -115,7 +115,7 @@ export interface StepResult {
  */
 export interface WorkflowContext {
   /** Workflow input data */
-  inputs: Record<string, any>;
+  inputs: Record<string, unknown>;
   /** Results from completed steps */
   results: Record<string, StepResult>;
 }
@@ -124,5 +124,5 @@ export interface WorkflowContext {
  * Registry of activity functions available to workflows.
  */
 export interface ActivityRegistration {
-  [key: string]: (...args: any[]) => Promise<any>;
+  [key: string]: (...args: unknown[]) => Promise<unknown>;
 }

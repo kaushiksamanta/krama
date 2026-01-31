@@ -1,0 +1,255 @@
+# E-Commerce Order Fulfillment Workflow
+# Handles order validation, inventory check, payment, shipping, and notifications
+name: order-fulfillment
+version: 1.0.0
+description: Complete e-commerce order processing from validation to delivery notification
+
+inputs:
+  order:
+    orderId: "ORD-2024-001234"
+    customerId: "CUST-5678"
+    items:
+      - sku: "PROD-001"
+        name: "Wireless Headphones"
+        quantity: 2
+        price: 79.99
+      - sku: "PROD-002"
+        name: "USB-C Cable"
+        quantity: 3
+        price: 12.99
+    shippingAddress:
+      street: "123 Main St"
+      city: "San Francisco"
+      state: "CA"
+      zip: "94102"
+      country: "US"
+    paymentMethod:
+      type: "credit_card"
+      token: "tok_visa_4242"
+    shippingMethod: "express"
+
+steps:
+  # Step 1: Validate order structure
+  - id: validate_order
+    activity: validate
+    input:
+      data: "{{inputs.order}}"
+      rules:
+        required: ["orderId", "customerId", "items", "shippingAddress", "paymentMethod"]
+        types:
+          orderId: "string"
+          customerId: "string"
+          items: "array"
+        custom: "data.items && data.items.length > 0"
+
+  # Step 2: Calculate order totals
+  - id: calculate_totals
+    type: code
+    dependsOn: ["validate_order"]
+    when: "{{step.validate_order.result.isValid}}"
+    input:
+      order: "{{inputs.order}}"
+    code: |
+      const items = input.order.items;
+      const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      
+      // Calculate shipping based on method
+      const shippingRates = {
+        standard: 5.99,
+        express: 14.99,
+        overnight: 29.99
+      };
+      const shipping = shippingRates[input.order.shippingMethod] || 5.99;
+      
+      // Calculate tax (assume 8.5% for CA)
+      const taxRate = input.order.shippingAddress.state === 'CA' ? 0.085 : 0.07;
+      const tax = subtotal * taxRate;
+      
+      const total = subtotal + shipping + tax;
+      
+      console.log('Order calculation:', { subtotal, shipping, tax, total });
+      
+      return {
+        subtotal: Math.round(subtotal * 100) / 100,
+        shipping: Math.round(shipping * 100) / 100,
+        tax: Math.round(tax * 100) / 100,
+        total: Math.round(total * 100) / 100,
+        itemCount: items.reduce((sum, item) => sum + item.quantity, 0)
+      };
+
+  # Step 3: Check inventory for all items
+  - id: check_inventory
+    activity: http
+    dependsOn: ["calculate_totals"]
+    input:
+      url: "https://inventory.example.com/api/check"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body:
+        items: "{{inputs.order.items}}"
+        warehouseRegion: "{{inputs.order.shippingAddress.state}}"
+      timeout: 10000
+    retry:
+      count: 2
+      initialInterval: 1s
+
+  # Step 4: Reserve inventory
+  - id: reserve_inventory
+    activity: http
+    dependsOn: ["check_inventory"]
+    when: "{{step.check_inventory.result.data.allAvailable}} == true"
+    input:
+      url: "https://inventory.example.com/api/reserve"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body:
+        orderId: "{{inputs.order.orderId}}"
+        items: "{{inputs.order.items}}"
+        expiresIn: 900
+      timeout: 10000
+
+  # Step 5: Process payment
+  - id: process_payment
+    activity: http
+    dependsOn: ["reserve_inventory"]
+    input:
+      url: "https://payments.example.com/api/charge"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.paymentApiKey}}"
+      body:
+        amount: "{{step.calculate_totals.result.total}}"
+        currency: "USD"
+        paymentToken: "{{inputs.order.paymentMethod.token}}"
+        orderId: "{{inputs.order.orderId}}"
+        customerId: "{{inputs.order.customerId}}"
+        description: "Order {{inputs.order.orderId}}"
+      timeout: 30000
+    retry:
+      count: 3
+      initialInterval: 2s
+      backoffCoefficient: 2.0
+
+  # Step 6: Log payment success
+  - id: log_payment
+    activity: log
+    dependsOn: ["process_payment"]
+    input:
+      message: "Payment processed successfully"
+      level: "info"
+      data:
+        orderId: "{{inputs.order.orderId}}"
+        amount: "{{step.calculate_totals.result.total}}"
+        transactionId: "{{step.process_payment.result.data.transactionId}}"
+
+  # Step 7: Create shipping label
+  - id: create_shipping_label
+    activity: http
+    dependsOn: ["process_payment"]
+    input:
+      url: "https://shipping.example.com/api/labels"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body:
+        orderId: "{{inputs.order.orderId}}"
+        shippingMethod: "{{inputs.order.shippingMethod}}"
+        address: "{{inputs.order.shippingAddress}}"
+        weight: 2.5
+        dimensions:
+          length: 12
+          width: 8
+          height: 6
+      timeout: 15000
+
+  # Step 8: Transform order data for warehouse
+  - id: prepare_warehouse_order
+    activity: transform
+    dependsOn: ["create_shipping_label"]
+    input:
+      data:
+        order: "{{inputs.order}}"
+        totals: "{{step.calculate_totals.result}}"
+        shipping: "{{step.create_shipping_label.result.data}}"
+        payment: "{{step.process_payment.result.data}}"
+      operations:
+        - type: pick
+          config:
+            fields: ["order", "shipping"]
+        - type: merge
+          config:
+            source:
+              status: "ready_to_ship"
+              priority: "high"
+
+  # Step 9: Send to warehouse fulfillment system
+  - id: submit_to_warehouse
+    activity: http
+    dependsOn: ["prepare_warehouse_order"]
+    input:
+      url: "https://warehouse.example.com/api/orders"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body: "{{step.prepare_warehouse_order.result.data}}"
+      timeout: 10000
+
+  # Step 10: Send order confirmation email
+  - id: send_confirmation_email
+    activity: email
+    dependsOn: ["process_payment"]
+    input:
+      to: "{{inputs.customerEmail}}"
+      subject: "Order Confirmed - {{inputs.order.orderId}}"
+      body: |
+        <h1>Thank You for Your Order!</h1>
+        <p>Order Number: <strong>{{inputs.order.orderId}}</strong></p>
+        
+        <h2>Order Summary</h2>
+        <p>Subtotal: ${{step.calculate_totals.result.subtotal}}</p>
+        <p>Shipping: ${{step.calculate_totals.result.shipping}}</p>
+        <p>Tax: ${{step.calculate_totals.result.tax}}</p>
+        <p><strong>Total: ${{step.calculate_totals.result.total}}</strong></p>
+        
+        <h2>Shipping Address</h2>
+        <p>{{inputs.order.shippingAddress.street}}<br>
+        {{inputs.order.shippingAddress.city}}, {{inputs.order.shippingAddress.state}} {{inputs.order.shippingAddress.zip}}</p>
+        
+        <p>You will receive tracking information once your order ships.</p>
+
+  # Step 11: Wait for shipment confirmation signal
+  - id: await_shipment
+    type: signal
+    dependsOn: ["submit_to_warehouse"]
+
+  # Step 12: Send shipping notification
+  - id: send_shipping_notification
+    activity: email
+    dependsOn: ["await_shipment"]
+    input:
+      to: "{{inputs.customerEmail}}"
+      subject: "Your Order Has Shipped - {{inputs.order.orderId}}"
+      body: |
+        <h1>Your Order is On Its Way!</h1>
+        <p>Great news! Your order has been shipped.</p>
+        
+        <p><strong>Tracking Number:</strong> {{step.await_shipment.result.trackingNumber}}</p>
+        <p><strong>Carrier:</strong> {{step.await_shipment.result.carrier}}</p>
+        <p><strong>Estimated Delivery:</strong> {{step.await_shipment.result.estimatedDelivery}}</p>
+        
+        <a href="{{step.await_shipment.result.trackingUrl}}">Track Your Package</a>
+
+  # Step 13: Log order completion
+  - id: log_order_complete
+    activity: log
+    dependsOn: ["send_shipping_notification"]
+    input:
+      message: "Order fulfillment completed"
+      level: "info"
+      data:
+        orderId: "{{inputs.order.orderId}}"
+        trackingNumber: "{{step.await_shipment.result.trackingNumber}}"
+        totalAmount: "{{step.calculate_totals.result.total}}"

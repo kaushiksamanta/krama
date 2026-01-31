@@ -1,9 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { activities } from '../src/activities.js';
+import codeNode from '../src/nodes/code.v1.node.js';
+import { createMockContext } from './helpers/node-test-utils.js';
 import { loadWorkflowDefinition, validateWorkflowSteps } from '../src/loader.js';
 import type { StepDefinition } from '../src/types.js';
 
-const { executeCode } = activities;
+// Helper to execute code using the node-based architecture
+async function executeCode(params: {
+  code: string;
+  input: Record<string, unknown>;
+  context: { inputs: Record<string, unknown>; steps: Record<string, unknown> };
+  timeout?: number;
+}) {
+  const ctx = createMockContext({
+    // Pass step input via __stepInput__ which the code node extracts
+    workflowInputs: { ...params.context.inputs, __stepInput__: params.input },
+    stepResults: params.context.steps,
+  });
+  
+  const result = await codeNode.execute(
+    { code: params.code, timeout: params.timeout ?? 30000 },
+    ctx
+  );
+  
+  return result;
+}
 
 describe('executeCode activity', () => {
   it('executes simple JavaScript code and returns result', async () => {
@@ -89,10 +109,11 @@ describe('executeCode activity', () => {
       context: { inputs: {}, steps: {} },
     });
 
-    expect(result.result.items).toHaveLength(2);
-    expect(result.result.items[0].total).toBe(20);
-    expect(result.result.items[1].total).toBe(60);
-    expect(result.result.totalValue).toBe(80);
+    const res = result.result as { items: { total: number }[]; totalValue: number };
+    expect(res.items).toHaveLength(2);
+    expect(res.items[0].total).toBe(20);
+    expect(res.items[1].total).toBe(60);
+    expect(res.totalValue).toBe(80);
   });
 
   it('has access to built-in JavaScript globals', async () => {
@@ -108,10 +129,11 @@ describe('executeCode activity', () => {
       context: { inputs: {}, steps: {} },
     });
 
-    expect(result.result.obj).toEqual({ a: 1 });
-    expect(result.result.rounded).toBe(4);
-    expect(result.result.arr).toEqual([1, 2, 3]);
-    expect(result.result.keys).toEqual(['x', 'y']);
+    const res = result.result as { obj: unknown; rounded: number; arr: number[]; keys: string[] };
+    expect(res.obj).toEqual({ a: 1 });
+    expect(res.rounded).toBe(4);
+    expect(res.arr).toEqual([1, 2, 3]);
+    expect(res.keys).toEqual(['x', 'y']);
   });
 
   it('throws error for invalid code', async () => {
@@ -161,10 +183,11 @@ describe('executeCode activity', () => {
       context: { inputs: {}, steps: {} },
     });
 
-    expect(result.result.mapSize).toBe(1);
-    expect(result.result.setSize).toBe(3);
-    expect(result.result.hasKey).toBe(true);
-    expect(result.result.hasValue).toBe(true);
+    const res = result.result as { mapSize: number; setSize: number; hasKey: boolean; hasValue: boolean };
+    expect(res.mapSize).toBe(1);
+    expect(res.setSize).toBe(3);
+    expect(res.hasKey).toBe(true);
+    expect(res.hasValue).toBe(true);
   });
 });
 

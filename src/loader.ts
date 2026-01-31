@@ -125,8 +125,8 @@ export function validateWorkflowSteps(steps: StepDefinition[]): void {
 
 export function resolveWorkflowInputs(
   workflow: WorkflowDefinition, 
-  overrides: Record<string, any> = {}
-): Record<string, any> {
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
   // Start with default inputs from workflow definition
   const inputs = { ...(workflow.inputs || {}) };
   

@@ -9,7 +9,7 @@
  * - Automatic dependency resolution and parallel execution
  */
 
-import { proxyActivities, defineSignal, setHandler, sleep, condition } from '@temporalio/workflow';
+import { proxyActivities, defineSignal, setHandler, condition } from '@temporalio/workflow';
 import { WorkflowDAG } from './toposort.js';
 import { StepDefinition, WorkflowContext, StepResult } from './types.js';
 import Mustache from 'mustache';
@@ -24,7 +24,7 @@ export const cancelSignal = defineSignal('cancel');
  * Signal to deliver payloads to signal-type steps.
  * Usage: await handle.signal('step', stepId, payload);
  */
-export const stepSignal = defineSignal<[stepId: string, payload: any]>('step');
+export const stepSignal = defineSignal<[stepId: string, payload: unknown]>('step');
 
 /**
  * Main workflow function that executes a DAG-based workflow.
@@ -38,11 +38,12 @@ export const stepSignal = defineSignal<[stepId: string, payload: any]>('step');
  */
 export async function runWorkflow(definition: {
   steps: StepDefinition[];
-  inputs?: Record<string, any>;
+  inputs?: Record<string, unknown>;
   taskQueue: string;
   workflowId: string;
+  workflowName?: string;
 }): Promise<Record<string, StepResult>> {
-  const { steps, inputs = {}, taskQueue, workflowId } = definition;
+  const { steps, inputs = {}, taskQueue, workflowId, workflowName = 'Workflow' } = definition;
 
   // Store results of each step
   const results: Record<string, StepResult> = {};
@@ -59,13 +60,13 @@ export async function runWorkflow(definition: {
 
   // Set up cancellation & signal handlers
   let isCancelled = false;
-  const signalResults: Record<string, any> = {};
+  const signalResults: Record<string, unknown> = {};
 
   setHandler(cancelSignal, () => {
     isCancelled = true;
   });
 
-  setHandler(stepSignal, (stepId: string, payload: any) => {
+  setHandler(stepSignal, (stepId: string, payload: unknown) => {
     signalResults[stepId] = payload;
   });
 
@@ -141,17 +142,21 @@ export async function runWorkflow(definition: {
         };
         
         // Recursively render templates in the input
-        const renderValue = (value: any): any => {
+        const renderValue = (value: unknown): unknown => {
           if (typeof value === 'string') {
             // Check if the entire string is a single mustache tag like {{inputs.user}}
             const singleTagMatch = value.match(/^\{\{([^}]+)\}\}$/);
             if (singleTagMatch) {
               // Resolve the path directly to preserve object types
-              const path = singleTagMatch[1].trim();
-              const parts = path.split('.');
-              let result: any = templateContext;
+              const pathStr = singleTagMatch[1].trim();
+              const parts = pathStr.split('.');
+              let result: unknown = templateContext;
               for (const part of parts) {
-                result = result?.[part];
+                if (result && typeof result === 'object') {
+                  result = (result as Record<string, unknown>)[part];
+                } else {
+                  result = undefined;
+                }
               }
               return result;
             }
@@ -160,15 +165,15 @@ export async function runWorkflow(definition: {
           } else if (Array.isArray(value)) {
             return value.map(renderValue);
           } else if (value && typeof value === 'object') {
-            return Object.entries(value).reduce((acc, [k, v]) => ({
+            return Object.entries(value as Record<string, unknown>).reduce((acc, [k, v]) => ({
               ...acc,
               [k]: renderValue(v)
-            }), {});
+            }), {} as Record<string, unknown>);
           }
           return value;
         };
         
-        activityInput = renderValue(step.input);
+        activityInput = renderValue(step.input) as Record<string, unknown>;
       }
 
       // Handle signal-type steps (no activity invocation)
@@ -188,89 +193,50 @@ export async function runWorkflow(definition: {
         continue;
       }
 
-      // Handle code-type steps (execute JavaScript code via executeCode activity)
+      // Handle code-type steps (execute JavaScript code via code node)
       if (step.type === 'code') {
         if (!step.code) {
           throw new Error(`Step '${stepId}' is of type 'code' but missing 'code' field`);
         }
 
-        // Build the context for code execution
-        const codeContext = {
-          inputs: context.inputs,
-          steps: Object.entries(context.results).reduce((acc, [id, result]) => ({
+        // Build NodeContext for code execution
+        const nodeContext = {
+          workflowInputs: { ...context.inputs, __stepInput__: activityInput },
+          stepResults: Object.entries(context.results).reduce((acc, [id, result]) => ({
             ...acc,
             [id]: result.output
-          }), {} as Record<string, any>)
+          }), {} as Record<string, unknown>),
+          workflow: { id: workflowId, name: workflowName },
+          step: { id: stepId, attempt: 1 },
         };
 
-        // Configure retry policy for code execution
-        const baseInitialInterval = step.retry?.initialInterval ?? '1s';
-        const baseBackoff = step.retry?.backoffCoefficient ?? 2.0;
-        const maximumAttempts =
-          step.retry?.maximumAttempts ??
-          (step.retry?.count !== undefined ? step.retry.count + 1 : 2);
+        // Create proxy with Temporal's built-in retry policy
+        const stepProxy = proxyActivities<Record<string, (input: unknown) => Promise<unknown>>>({
+          startToCloseTimeout: step.timeout?.startToClose ?? '1 hour',
+          taskQueue,
+          retry: {
+            initialInterval: step.retry?.initialInterval ?? '1s',
+            backoffCoefficient: step.retry?.backoffCoefficient ?? 2.0,
+            maximumAttempts: step.retry?.maximumAttempts ?? 
+              (step.retry?.count !== undefined ? step.retry.count + 1 : 2),
+            maximumInterval: '5 minutes',
+          },
+        });
 
-        const retryPolicy = {
-          initialInterval: baseInitialInterval,
-          backoffCoefficient: baseBackoff,
-          maximumAttempts,
-        };
+        // Use the code node activity - Temporal handles retries
+        const codeResult = await stepProxy.code({
+          input: {
+            code: step.code,
+            timeout: step.timeout?.startToClose ? parseDurationToMs(step.timeout.startToClose) : 30000,
+          },
+          context: nodeContext,
+        }) as { result: { result: unknown; logs: string[]; executionTime: number }; logs: string[]; executionTime: number };
 
-        let lastError: Error | undefined;
-        for (let attempt = 1; attempt <= retryPolicy.maximumAttempts; attempt++) {
-          try {
-            const stepProxy = proxyActivities<Record<string, (input: any) => Promise<any>>>(
-              {
-                startToCloseTimeout: step.timeout?.startToClose ?? '1 hour',
-                taskQueue,
-              }
-            );
-
-            stepResult.attempt = attempt;
-            const codeResult = await stepProxy.executeCode({
-              code: step.code,
-              input: activityInput,
-              context: codeContext,
-              timeout: step.timeout?.startToClose ? parseDurationToMs(step.timeout.startToClose) : 30000,
-            });
-
-            // The result from executeCode contains { result, logs, executionTime }
-            // We extract just the result as the step output
-            stepResult.output = codeResult.result;
-            break;
-          } catch (error) {
-            lastError = error as Error;
-            if (attempt < retryPolicy.maximumAttempts) {
-              const delayMs = Math.min(
-                retryPolicy.initialInterval ?
-                  parseDurationToMs(retryPolicy.initialInterval) * Math.pow(retryPolicy.backoffCoefficient, attempt - 1) :
-                  1000 * Math.pow(2, attempt - 1),
-                5 * 60 * 1000 // Max 5 minutes
-              );
-              await sleep(delayMs);
-            } else {
-              throw lastError;
-            }
-          }
-        }
-
+        stepResult.output = codeResult.result.result;
         results[stepId] = stepResult;
         context.results[stepId] = stepResult;
         continue;
       }
-
-      // Configure retry policy
-      const baseInitialInterval = step.retry?.initialInterval ?? '1s';
-      const baseBackoff = step.retry?.backoffCoefficient ?? 2.0;
-      const maximumAttempts =
-        step.retry?.maximumAttempts ??
-        (step.retry?.count !== undefined ? step.retry.count + 1 : 2);
-
-      const retryPolicy = {
-        initialInterval: baseInitialInterval,
-        backoffCoefficient: baseBackoff,
-        maximumAttempts,
-      };
 
       // Validate activity name exists in worker registration (proxy throws at run if missing)
       const activityName = step.activity;
@@ -278,37 +244,37 @@ export async function runWorkflow(definition: {
         throw new Error(`Invalid activity name for step '${stepId}'`);
       }
 
-      // Execute with retry logic
-      let lastError: Error | undefined;
-      for (let attempt = 1; attempt <= retryPolicy.maximumAttempts; attempt++) {
-        try {
-          // Create a proxy for this step to honor per-step timeout
-          const stepProxy = proxyActivities<Record<string, (input: any) => Promise<any>>>(
-            {
-              startToCloseTimeout: step.timeout?.startToClose ?? '1 hour',
-              taskQueue,
-            }
-          );
+      // Build NodeContext for activities
+      const nodeContext = {
+        workflowInputs: context.inputs,
+        stepResults: Object.entries(context.results).reduce((acc, [id, result]) => ({
+          ...acc,
+          [id]: result.output
+        }), {} as Record<string, unknown>),
+        workflow: { id: workflowId, name: workflowName },
+        step: { id: stepId, attempt: 1 },
+      };
 
-          stepResult.attempt = attempt;
-          const result = await stepProxy[activityName](activityInput);
-          stepResult.output = result;
-          break;
-        } catch (error) {
-          lastError = error as Error;
-          if (attempt < retryPolicy.maximumAttempts) {
-            const delayMs = Math.min(
-              retryPolicy.initialInterval ? 
-                parseDurationToMs(retryPolicy.initialInterval) * Math.pow(retryPolicy.backoffCoefficient, attempt - 1) :
-                1000 * Math.pow(2, attempt - 1),
-              5 * 60 * 1000 // Max 5 minutes
-            );
-            await sleep(delayMs);
-          } else {
-            throw lastError;
-          }
-        }
-      }
+      // Create proxy with Temporal's built-in retry policy
+      const stepProxy = proxyActivities<Record<string, (input: unknown) => Promise<unknown>>>({
+        startToCloseTimeout: step.timeout?.startToClose ?? '1 hour',
+        taskQueue,
+        retry: {
+          initialInterval: step.retry?.initialInterval ?? '1s',
+          backoffCoefficient: step.retry?.backoffCoefficient ?? 2.0,
+          maximumAttempts: step.retry?.maximumAttempts ?? 
+            (step.retry?.count !== undefined ? step.retry.count + 1 : 2),
+          maximumInterval: '5 minutes',
+        },
+      });
+
+      // All activities are node-based - Temporal handles retries
+      const nodeResult = await stepProxy[activityName]({
+        input: activityInput,
+        context: nodeContext,
+      }) as { result: unknown; logs: string[]; executionTime: number };
+      
+      stepResult.output = nodeResult.result;
     } catch (error) {
       stepResult.status = 'failed';
       stepResult.error = error instanceof Error ? error.message : String(error);

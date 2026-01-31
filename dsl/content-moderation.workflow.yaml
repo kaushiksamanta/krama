@@ -1,0 +1,440 @@
+# Content Moderation Workflow
+# Automated content review with AI analysis, human review escalation, and publishing
+name: content-moderation
+version: 1.0.0
+description: Multi-stage content moderation with AI screening, human review, and automated publishing
+
+inputs:
+  content:
+    id: "POST-2024-00789"
+    type: "user_post"
+    authorId: "USER-12345"
+    authorTrustScore: 85
+    title: "My Amazing Travel Experience"
+    body: "Just returned from an incredible trip to Japan..."
+    mediaUrls:
+      - "https://cdn.example.com/images/post-789-1.jpg"
+      - "https://cdn.example.com/images/post-789-2.jpg"
+    tags: ["travel", "japan", "photography"]
+    language: "en"
+    submittedAt: "2024-01-15T10:30:00Z"
+    metadata:
+      ipAddress: "203.0.113.42"
+      userAgent: "Mozilla/5.0..."
+      platform: "web"
+
+steps:
+  # Step 1: Validate content structure
+  - id: validate_content
+    activity: validate
+    input:
+      data: "{{inputs.content}}"
+      rules:
+        required: ["id", "type", "authorId", "body"]
+        types:
+          id: "string"
+          authorId: "string"
+          body: "string"
+        custom: "data.body.length > 0 && data.body.length <= 50000"
+
+  # Step 2: Initialize moderation context
+  - id: init_moderation
+    type: code
+    dependsOn: ["validate_content"]
+    when: "{{step.validate_content.result.isValid}}"
+    input:
+      content: "{{inputs.content}}"
+    code: |
+      const moderationContext = {
+        contentId: input.content.id,
+        status: 'pending_review',
+        startedAt: new Date().toISOString(),
+        checks: [],
+        flags: [],
+        scores: {},
+        requiresHumanReview: false,
+        autoApprovalEligible: input.content.authorTrustScore >= 90,
+        priority: input.content.authorTrustScore < 50 ? 'high' : 'normal'
+      };
+      
+      console.log('Moderation initialized for:', moderationContext.contentId);
+      console.log('Auto-approval eligible:', moderationContext.autoApprovalEligible);
+      
+      return moderationContext;
+
+  # Step 3: Check author reputation
+  - id: check_author_reputation
+    activity: http
+    dependsOn: ["init_moderation"]
+    input:
+      url: "https://trust.example.com/api/users/{{inputs.content.authorId}}/reputation"
+      method: "GET"
+      headers:
+        Authorization: "Bearer {{inputs.trustApiToken}}"
+      timeout: 10000
+
+  # Step 4: Analyze text content with AI
+  - id: ai_text_analysis
+    activity: http
+    dependsOn: ["init_moderation"]
+    input:
+      url: "https://ai-moderation.example.com/api/analyze/text"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.aiApiToken}}"
+      body:
+        text: "{{inputs.content.title}} {{inputs.content.body}}"
+        language: "{{inputs.content.language}}"
+        checks:
+          - "toxicity"
+          - "spam"
+          - "hate_speech"
+          - "violence"
+          - "adult_content"
+          - "misinformation"
+          - "pii_detection"
+      timeout: 30000
+    retry:
+      count: 2
+      initialInterval: 2s
+
+  # Step 5: Analyze images with AI (if present)
+  - id: ai_image_analysis
+    activity: http
+    dependsOn: ["init_moderation"]
+    when: "{{inputs.content.mediaUrls.length}} > 0"
+    input:
+      url: "https://ai-moderation.example.com/api/analyze/images"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.aiApiToken}}"
+      body:
+        imageUrls: "{{inputs.content.mediaUrls}}"
+        checks:
+          - "adult_content"
+          - "violence"
+          - "hate_symbols"
+          - "copyright"
+          - "manipulation"
+      timeout: 60000
+    retry:
+      count: 2
+      initialInterval: 3s
+
+  # Step 6: Check for spam patterns
+  - id: spam_detection
+    activity: http
+    dependsOn: ["init_moderation"]
+    input:
+      url: "https://spam.example.com/api/check"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+      body:
+        content: "{{inputs.content.body}}"
+        authorId: "{{inputs.content.authorId}}"
+        ipAddress: "{{inputs.content.metadata.ipAddress}}"
+        checkTypes:
+          - "duplicate_content"
+          - "link_spam"
+          - "keyword_stuffing"
+          - "rate_limiting"
+      timeout: 15000
+
+  # Step 7: Aggregate moderation results
+  - id: aggregate_results
+    type: code
+    dependsOn: ["ai_text_analysis", "ai_image_analysis", "spam_detection", "check_author_reputation"]
+    input:
+      textAnalysis: "{{step.ai_text_analysis.result.data}}"
+      imageAnalysis: "{{step.ai_image_analysis.result.data}}"
+      spamCheck: "{{step.spam_detection.result.data}}"
+      authorReputation: "{{step.check_author_reputation.result.data}}"
+      moderationContext: "{{step.init_moderation.result}}"
+    code: |
+      const ctx = input.moderationContext;
+      const flags = [];
+      const scores = {};
+      
+      // Process text analysis
+      const textResults = input.textAnalysis?.results || {};
+      scores.toxicity = textResults.toxicity?.score || 0;
+      scores.spam = textResults.spam?.score || 0;
+      scores.hateSpeech = textResults.hate_speech?.score || 0;
+      
+      if (scores.toxicity > 0.7) flags.push({ type: 'toxicity', severity: 'high', score: scores.toxicity });
+      if (scores.spam > 0.8) flags.push({ type: 'spam', severity: 'high', score: scores.spam });
+      if (scores.hateSpeech > 0.5) flags.push({ type: 'hate_speech', severity: 'critical', score: scores.hateSpeech });
+      if (textResults.pii_detection?.found) flags.push({ type: 'pii', severity: 'medium', details: textResults.pii_detection.types });
+      
+      // Process image analysis
+      const imageResults = input.imageAnalysis?.results || [];
+      imageResults.forEach((img, idx) => {
+        if (img.adult_content?.score > 0.6) {
+          flags.push({ type: 'adult_image', severity: 'high', imageIndex: idx, score: img.adult_content.score });
+        }
+        if (img.violence?.score > 0.7) {
+          flags.push({ type: 'violent_image', severity: 'high', imageIndex: idx, score: img.violence.score });
+        }
+        if (img.copyright?.detected) {
+          flags.push({ type: 'copyright', severity: 'medium', imageIndex: idx, details: img.copyright.matches });
+        }
+      });
+      scores.imageRisk = Math.max(...imageResults.map(r => r.overall_risk || 0), 0);
+      
+      // Process spam check
+      if (input.spamCheck?.isSpam) {
+        flags.push({ type: 'spam_detected', severity: 'high', reasons: input.spamCheck.reasons });
+      }
+      scores.spamConfidence = input.spamCheck?.confidence || 0;
+      
+      // Calculate overall risk score
+      const overallRisk = Math.max(
+        scores.toxicity,
+        scores.spam,
+        scores.hateSpeech,
+        scores.imageRisk,
+        scores.spamConfidence
+      );
+      
+      // Determine if human review is needed
+      const criticalFlags = flags.filter(f => f.severity === 'critical');
+      const highFlags = flags.filter(f => f.severity === 'high');
+      
+      const requiresHumanReview = 
+        criticalFlags.length > 0 ||
+        highFlags.length >= 2 ||
+        overallRisk > 0.6 ||
+        input.authorReputation?.trustScore < 30;
+      
+      // Determine auto-action
+      let autoAction = 'none';
+      if (criticalFlags.length > 0 || overallRisk > 0.9) {
+        autoAction = 'reject';
+      } else if (overallRisk < 0.2 && flags.length === 0 && ctx.autoApprovalEligible) {
+        autoAction = 'approve';
+      }
+      
+      console.log('Moderation aggregation complete');
+      console.log('Flags:', flags.length, 'Overall risk:', overallRisk);
+      console.log('Auto action:', autoAction, 'Human review:', requiresHumanReview);
+      
+      return {
+        ...ctx,
+        flags,
+        scores,
+        overallRisk,
+        requiresHumanReview,
+        autoAction,
+        aggregatedAt: new Date().toISOString()
+      };
+
+  # Step 8: Log moderation results
+  - id: log_moderation_results
+    activity: log
+    dependsOn: ["aggregate_results"]
+    input:
+      message: "Content moderation analysis complete"
+      level: "info"
+      data:
+        contentId: "{{step.aggregate_results.result.contentId}}"
+        overallRisk: "{{step.aggregate_results.result.overallRisk}}"
+        flagCount: "{{step.aggregate_results.result.flags.length}}"
+        requiresHumanReview: "{{step.aggregate_results.result.requiresHumanReview}}"
+        autoAction: "{{step.aggregate_results.result.autoAction}}"
+
+  # Step 9: Auto-reject if critical violations
+  - id: auto_reject
+    type: code
+    dependsOn: ["aggregate_results"]
+    when: "{{step.aggregate_results.result.autoAction}} == 'reject'"
+    input:
+      results: "{{step.aggregate_results.result}}"
+      content: "{{inputs.content}}"
+    code: |
+      const rejection = {
+        contentId: input.content.id,
+        status: 'rejected',
+        reason: 'auto_moderation',
+        flags: input.results.flags.filter(f => f.severity === 'critical' || f.severity === 'high'),
+        rejectedAt: new Date().toISOString(),
+        appealEligible: true,
+        appealDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      };
+      
+      console.log('Content auto-rejected:', rejection.contentId);
+      
+      return rejection;
+
+  # Step 10: Auto-approve if low risk and eligible
+  - id: auto_approve
+    type: code
+    dependsOn: ["aggregate_results"]
+    when: "{{step.aggregate_results.result.autoAction}} == 'approve'"
+    input:
+      results: "{{step.aggregate_results.result}}"
+      content: "{{inputs.content}}"
+    code: |
+      const approval = {
+        contentId: input.content.id,
+        status: 'approved',
+        reason: 'auto_moderation',
+        riskScore: input.results.overallRisk,
+        approvedAt: new Date().toISOString(),
+        publishable: true
+      };
+      
+      console.log('Content auto-approved:', approval.contentId);
+      
+      return approval;
+
+  # Step 11: Queue for human review if needed
+  - id: queue_human_review
+    activity: http
+    dependsOn: ["aggregate_results"]
+    when: "{{step.aggregate_results.result.requiresHumanReview}} == true"
+    input:
+      url: "https://moderation.example.com/api/queue"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.moderationApiToken}}"
+      body:
+        contentId: "{{inputs.content.id}}"
+        contentType: "{{inputs.content.type}}"
+        priority: "{{step.aggregate_results.result.priority}}"
+        flags: "{{step.aggregate_results.result.flags}}"
+        scores: "{{step.aggregate_results.result.scores}}"
+        authorId: "{{inputs.content.authorId}}"
+        content:
+          title: "{{inputs.content.title}}"
+          body: "{{inputs.content.body}}"
+          mediaUrls: "{{inputs.content.mediaUrls}}"
+      timeout: 10000
+
+  # Step 12: Wait for human review decision
+  - id: await_human_review
+    type: signal
+    dependsOn: ["queue_human_review"]
+
+  # Step 13: Process human review decision
+  - id: process_human_decision
+    type: code
+    dependsOn: ["await_human_review"]
+    input:
+      decision: "{{step.await_human_review.result}}"
+      content: "{{inputs.content}}"
+      moderationResults: "{{step.aggregate_results.result}}"
+    code: |
+      const decision = input.decision;
+      
+      const result = {
+        contentId: input.content.id,
+        status: decision.approved ? 'approved' : 'rejected',
+        reviewType: 'human',
+        reviewerId: decision.reviewerId,
+        reviewedAt: new Date().toISOString(),
+        notes: decision.notes || null,
+        modifications: decision.modifications || null
+      };
+      
+      if (!decision.approved) {
+        result.rejectionReason = decision.reason;
+        result.appealEligible = decision.appealEligible !== false;
+        result.violationCategories = decision.violationCategories || [];
+      } else {
+        result.publishable = true;
+        result.contentWarnings = decision.contentWarnings || [];
+      }
+      
+      console.log('Human review processed:', result.contentId, result.status);
+      
+      return result;
+
+  # Step 14: Publish approved content
+  - id: publish_content
+    activity: http
+    dependsOn: ["auto_approve", "process_human_decision"]
+    when: "{{step.auto_approve.result.publishable}} == true || {{step.process_human_decision.result.publishable}} == true"
+    input:
+      url: "https://content.example.com/api/posts/{{inputs.content.id}}/publish"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.contentApiToken}}"
+      body:
+        status: "published"
+        publishedAt: "{{now}}"
+        moderationPassed: true
+      timeout: 10000
+
+  # Step 15: Notify author of rejection
+  - id: notify_rejection
+    activity: email
+    dependsOn: ["auto_reject", "process_human_decision"]
+    when: "{{step.auto_reject.result.status}} == 'rejected' || {{step.process_human_decision.result.status}} == 'rejected'"
+    input:
+      to: "{{inputs.authorEmail}}"
+      subject: "Your content submission requires attention"
+      body: |
+        <h1>Content Review Update</h1>
+        <p>Your recent submission could not be published as it did not meet our community guidelines.</p>
+        
+        <h2>Content Details</h2>
+        <p><strong>Title:</strong> {{inputs.content.title}}</p>
+        <p><strong>Submitted:</strong> {{inputs.content.submittedAt}}</p>
+        
+        <h2>What You Can Do</h2>
+        <p>You may edit your content to address the issues and resubmit, or you can appeal this decision.</p>
+        
+        <p><a href="https://example.com/content/{{inputs.content.id}}/edit">Edit Content</a></p>
+        <p><a href="https://example.com/content/{{inputs.content.id}}/appeal">Appeal Decision</a></p>
+
+  # Step 16: Notify author of approval
+  - id: notify_approval
+    activity: email
+    dependsOn: ["publish_content"]
+    input:
+      to: "{{inputs.authorEmail}}"
+      subject: "Your content has been published!"
+      body: |
+        <h1>Content Published!</h1>
+        <p>Great news! Your content has been reviewed and published.</p>
+        
+        <h2>Content Details</h2>
+        <p><strong>Title:</strong> {{inputs.content.title}}</p>
+        
+        <p><a href="https://example.com/posts/{{inputs.content.id}}">View Your Post</a></p>
+        
+        <p>Thank you for contributing to our community!</p>
+
+  # Step 17: Update author trust score
+  - id: update_trust_score
+    activity: http
+    dependsOn: ["publish_content", "auto_reject", "process_human_decision"]
+    input:
+      url: "https://trust.example.com/api/users/{{inputs.content.authorId}}/score"
+      method: "PATCH"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{inputs.trustApiToken}}"
+      body:
+        event: "content_moderation"
+        contentId: "{{inputs.content.id}}"
+        outcome: "{{step.publish_content.result.status || step.auto_reject.result.status || step.process_human_decision.result.status}}"
+      timeout: 10000
+
+  # Step 18: Log final moderation outcome
+  - id: log_final_outcome
+    activity: log
+    dependsOn: ["update_trust_score"]
+    input:
+      message: "Content moderation workflow completed"
+      level: "info"
+      data:
+        contentId: "{{inputs.content.id}}"
+        authorId: "{{inputs.content.authorId}}"
+        finalStatus: "{{step.publish_content.result.status || step.auto_reject.result.status || step.process_human_decision.result.status}}"
+        reviewType: "{{step.process_human_decision.result.reviewType || 'auto'}}"
