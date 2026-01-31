@@ -23,7 +23,6 @@ export class WorkflowDAG {
   constructor(steps: StepDefinition[]) {
     this.graph = new DepGraph<StepDefinition>();
 
-    // Ensure unique IDs and register nodes
     const ids = new Set<string>();
     for (const step of steps) {
       if (ids.has(step.id)) {
@@ -33,13 +32,11 @@ export class WorkflowDAG {
       this.graph.addNode(step.id, step);
     }
 
-    // Add dependencies (edges)
     for (const step of steps) {
       for (const depId of step.dependsOn ?? []) {
         if (!this.graph.hasNode(depId)) {
           throw new Error(`Step '${step.id}' depends on undefined step '${depId}'`);
         }
-        // Edge: step depends on depId
         this.graph.addDependency(step.id, depId);
       }
     }
@@ -50,7 +47,6 @@ export class WorkflowDAG {
    * Throws if there is a cycle.
    */
   getExecutionOrder(): string[] {
-    // `overallOrder` returns a topologically sorted list or throws on cycles
     return this.graph.overallOrder();
   }
 

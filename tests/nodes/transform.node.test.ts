@@ -183,21 +183,18 @@ describe('transform node', () => {
   it('validates input schema', () => {
     expect(transformNode.inputSchema).toBeDefined();
 
-    // Valid input
     const validResult = transformNode.inputSchema?.safeParse({
       data: { name: 'John' },
       operations: [{ type: 'pick', config: { fields: ['name'] } }],
     });
     expect(validResult?.success).toBe(true);
 
-    // Invalid - no operations
     const invalidEmpty = transformNode.inputSchema?.safeParse({
       data: { name: 'John' },
       operations: [],
     });
     expect(invalidEmpty?.success).toBe(false);
 
-    // Invalid - unknown operation type
     const invalidOp = transformNode.inputSchema?.safeParse({
       data: { name: 'John' },
       operations: [{ type: 'unknown', config: {} }],

@@ -80,11 +80,9 @@ describe('code node', () => {
   it('validates input schema', () => {
     expect(codeNode.inputSchema).toBeDefined();
 
-    // Valid input
     const validResult = codeNode.inputSchema?.safeParse({ code: 'return 1;' });
     expect(validResult?.success).toBe(true);
 
-    // Invalid input - empty code
     const invalidResult = codeNode.inputSchema?.safeParse({ code: '' });
     expect(invalidResult?.success).toBe(false);
   });

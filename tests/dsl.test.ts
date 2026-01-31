@@ -2,14 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { loadWorkflowDefinition } from '../src/loader.js';
 import type { WorkflowDefinition } from '../src/types.js';
 
-// Resolve the DSL file relative to this test file using import.meta.url
 const dslPath = new URL('../dsl/example.workflow.yaml', import.meta.url).pathname;
 
 describe('DSL: example.workflow.yaml', () => {
   it('loads and validates with extended fields (when, timeout, signal)', async () => {
     const def: WorkflowDefinition = await loadWorkflowDefinition(dslPath);
 
-    // Basic structure
     expect(def.name).toBe('user-registration');
     expect(def.steps.length).toBeGreaterThanOrEqual(5);
 

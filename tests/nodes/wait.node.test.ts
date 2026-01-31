@@ -24,7 +24,6 @@ describe('wait node', () => {
   it('parses duration strings', async () => {
     const context = createMockContext();
 
-    // Test seconds
     const startTime = Date.now();
     await waitNode.execute({ duration: '1s' }, context);
     const elapsed = Date.now() - startTime;
@@ -35,31 +34,24 @@ describe('wait node', () => {
   it('validates input schema', () => {
     expect(waitNode.inputSchema).toBeDefined();
 
-    // Valid - number
     const validNumber = waitNode.inputSchema?.safeParse({ duration: 1000 });
     expect(validNumber?.success).toBe(true);
 
-    // Valid - string format
     const validString = waitNode.inputSchema?.safeParse({ duration: '5s' });
     expect(validString?.success).toBe(true);
 
-    // Valid - minutes
     const validMinutes = waitNode.inputSchema?.safeParse({ duration: '1m' });
     expect(validMinutes?.success).toBe(true);
 
-    // Valid - hours
     const validHours = waitNode.inputSchema?.safeParse({ duration: '2h' });
     expect(validHours?.success).toBe(true);
 
-    // Valid - days
     const validDays = waitNode.inputSchema?.safeParse({ duration: '1d' });
     expect(validDays?.success).toBe(true);
 
-    // Invalid - wrong format
     const invalidFormat = waitNode.inputSchema?.safeParse({ duration: '5x' });
     expect(invalidFormat?.success).toBe(false);
 
-    // Invalid - negative number
     const invalidNegative = waitNode.inputSchema?.safeParse({ duration: -100 });
     expect(invalidNegative?.success).toBe(false);
   });
@@ -69,7 +61,6 @@ describe('wait node', () => {
 
     const result = await waitNode.execute({ duration: 10 }, context);
 
-    // Check ISO format
     expect(() => new Date(result.resumedAt)).not.toThrow();
     expect(new Date(result.resumedAt).toISOString()).toBe(result.resumedAt);
   });

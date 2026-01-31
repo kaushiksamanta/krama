@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { NodeDefinition, NodeContext, NodeExecutionError } from '../types/node.js';
 
-// ============================================================
-// HTTP Node v1
-// ============================================================
-
-// Define input schema with Zod
 const HttpInputSchema = z.object({
   url: z.string().url(),
   method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']).default('GET'),
@@ -15,10 +10,8 @@ const HttpInputSchema = z.object({
   responseType: z.enum(['json', 'text']).default('json'),
 });
 
-// Infer TypeScript type from schema
 type HttpInput = z.infer<typeof HttpInputSchema>;
 
-// Define output schema with Zod
 const HttpOutputSchema = z.object({
   status: z.number(),
   headers: z.record(z.string(), z.string()),
@@ -53,10 +46,8 @@ const httpNode: NodeDefinition<HttpInput, HttpOutput> = {
         signal: AbortSignal.timeout(timeout),
       };
 
-      // Add body for non-GET requests
       if (body && method !== 'GET') {
         fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
-        // Set Content-Type if not already set
         if (!headers?.['Content-Type'] && !headers?.['content-type']) {
           fetchOptions.headers = {
             ...fetchOptions.headers,
@@ -67,7 +58,6 @@ const httpNode: NodeDefinition<HttpInput, HttpOutput> = {
 
       const response = await fetch(url, fetchOptions);
 
-      // Parse response based on responseType
       let data: unknown;
       if (responseType === 'json') {
         const text = await response.text();
@@ -80,7 +70,6 @@ const httpNode: NodeDefinition<HttpInput, HttpOutput> = {
         data = await response.text();
       }
 
-      // Convert headers to plain object
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         responseHeaders[key] = value;
@@ -88,7 +77,6 @@ const httpNode: NodeDefinition<HttpInput, HttpOutput> = {
 
       logger.info(`HTTP request completed with status ${response.status}`);
 
-      // Throw error for non-2xx responses
       if (!response.ok) {
         throw new NodeExecutionError(
           'http',
@@ -106,7 +94,6 @@ const httpNode: NodeDefinition<HttpInput, HttpOutput> = {
     } catch (error) {
       if (error instanceof NodeExecutionError) throw error;
 
-      // Handle timeout errors
       if (error instanceof Error && error.name === 'TimeoutError') {
         throw new NodeExecutionError(
           'http',

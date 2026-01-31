@@ -20,7 +20,6 @@ describe('log node', () => {
 
     expect(result.loggedAt).toBeDefined();
     expect(mockLogger.info).toHaveBeenCalled();
-    // Verify the structured log entry contains expected fields
     const logArg = mockLogger.info.mock.calls[0][0];
     const logEntry = JSON.parse(logArg);
     expect(logEntry.message).toBe('Test message');
@@ -51,7 +50,6 @@ describe('log node', () => {
     );
 
     expect(mockLogger.info).toHaveBeenCalled();
-    // Verify the structured log entry contains the data
     const logArg = mockLogger.info.mock.calls[0][0];
     const logEntry = JSON.parse(logArg);
     expect(logEntry.message).toBe('Test with data');
@@ -61,21 +59,18 @@ describe('log node', () => {
   it('validates input schema', () => {
     expect(logNode.inputSchema).toBeDefined();
 
-    // Valid input
     const validResult = logNode.inputSchema?.safeParse({
       message: 'Hello',
       level: 'info',
     });
     expect(validResult?.success).toBe(true);
 
-    // Invalid - empty message
     const invalidMessage = logNode.inputSchema?.safeParse({
       message: '',
       level: 'info',
     });
     expect(invalidMessage?.success).toBe(false);
 
-    // Invalid level
     const invalidLevel = logNode.inputSchema?.safeParse({
       message: 'Hello',
       level: 'invalid',

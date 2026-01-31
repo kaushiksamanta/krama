@@ -36,13 +36,10 @@ export function buildTemplateContext(
  */
 export function renderValue(value: unknown, templateContext: TemplateContext): unknown {
   if (typeof value === 'string') {
-    // Check if the entire string is a single mustache tag like {{inputs.user}}
     const singleTagMatch = value.match(/^\{\{([^}]+)\}\}$/);
     if (singleTagMatch) {
-      // Resolve the path directly to preserve object types
       return resolvePath(templateContext, singleTagMatch[1].trim());
     }
-    // Otherwise render as a string template
     return Mustache.render(value, templateContext);
   } else if (Array.isArray(value)) {
     return value.map(v => renderValue(v, templateContext));

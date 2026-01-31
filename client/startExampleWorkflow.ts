@@ -2,7 +2,6 @@ import { Connection, WorkflowClient } from '@temporalio/client';
 import { loadWorkflowDefinition, resolveWorkflowInputs } from '../src/loader.js';
 
 async function main() {
-  // Create a proper connection to Temporal
   const connection = await Connection.connect({
     address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233',
   });
@@ -11,11 +10,9 @@ async function main() {
     connection,
   });
 
-  // Resolve path to the example DSL file
   const workflowFile = new URL('../dsl/example.workflow.yaml', import.meta.url).pathname;
   const workflowDef = await loadWorkflowDefinition(workflowFile);
 
-  // Provide concrete inputs for the example workflow
   const inputs = resolveWorkflowInputs(workflowDef, {
     user: {
       name: 'Alice Example',
@@ -42,7 +39,6 @@ async function main() {
 
   console.log(`Started workflow ${workflowId} (runId: ${handle.firstExecutionRunId})`);
 
-  // Simulate some external decision before sending the approval signal
   await new Promise(resolve => setTimeout(resolve, 2000));
 
   console.log('Sending approval signal to workflow...');

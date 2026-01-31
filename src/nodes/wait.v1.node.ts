@@ -1,25 +1,17 @@
 import { z } from 'zod';
 import { NodeDefinition, NodeContext } from '../types/node.js';
 
-// ============================================================
-// Wait Node v1
-// ============================================================
-
-// Duration can be a string like '5s', '1m', '2h', '1d' or milliseconds
 const DurationSchema = z.union([
   z.string().regex(/^\d+[smhd]$/, 'Must be format: 5s, 1m, 2h, or 1d'),
   z.number().min(0),
 ]);
 
-// Define input schema with Zod
 const WaitInputSchema = z.object({
   duration: DurationSchema,
 });
 
-// Infer TypeScript type from schema
 type WaitInput = z.infer<typeof WaitInputSchema>;
 
-// Define output schema with Zod
 const WaitOutputSchema = z.object({
   waitedFor: z.number(), // Actual wait time in ms
   resumedAt: z.string(),

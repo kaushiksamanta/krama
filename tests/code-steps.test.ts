@@ -4,7 +4,6 @@ import { createMockContext } from './helpers/node-test-utils.js';
 import { loadWorkflowDefinition, validateWorkflowSteps } from '../src/loader.js';
 import type { StepDefinition } from '../src/types.js';
 
-// Helper to execute code using the node-based architecture
 async function executeCode(params: {
   code: string;
   input: Record<string, unknown>;
@@ -12,7 +11,6 @@ async function executeCode(params: {
   timeout?: number;
 }) {
   const ctx = createMockContext({
-    // Pass step input via __stepInput__ which the code node extracts
     workflowInputs: { ...params.context.inputs, __stepInput__: params.input },
     stepResults: params.context.steps,
   });

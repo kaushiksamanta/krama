@@ -6,7 +6,6 @@ describe('http node', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    // Mock fetch for testing
     globalThis.fetch = vi.fn();
   });
 
@@ -105,21 +104,18 @@ describe('http node', () => {
   it('validates input schema', () => {
     expect(httpNode.inputSchema).toBeDefined();
 
-    // Valid input
     const validResult = httpNode.inputSchema?.safeParse({
       url: 'https://example.com',
       method: 'GET',
     });
     expect(validResult?.success).toBe(true);
 
-    // Invalid URL
     const invalidUrl = httpNode.inputSchema?.safeParse({
       url: 'not-a-url',
       method: 'GET',
     });
     expect(invalidUrl?.success).toBe(false);
 
-    // Invalid method
     const invalidMethod = httpNode.inputSchema?.safeParse({
       url: 'https://example.com',
       method: 'INVALID',

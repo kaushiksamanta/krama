@@ -19,12 +19,9 @@ export async function runWorkflow(definition: ExecutorWorkflowDefinition): Promi
   return executor.execute();
 }
 
-// Re-export signals for external use
 export { cancelSignal, stepSignal };
 
-// Re-export types
 export type { ExecutorWorkflowDefinition as WorkflowDefinition, StepResult, ExecutorNodeContext as NodeContext, TemplateContext } from '../types/index.js';
 
-// Re-export classes for testing/extension
 export { WorkflowExecutor } from './WorkflowExecutor.js';
 export { StepExecutor } from './StepExecutor.js';

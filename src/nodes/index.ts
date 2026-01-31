@@ -3,7 +3,6 @@ import * as path from 'path';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { NodeDefinition, NodeContext, NodeLogger, NodeExecutionError } from '../types/node.js';
 
-// Store all registered nodes (name -> version -> node)
 const nodeRegistry: Map<string, Map<number, NodeDefinition>> = new Map();
 
 /**
@@ -44,7 +43,6 @@ export function getNode(name: string, version?: number): NodeDefinition | undefi
     return versions.get(version);
   }
   
-  // Return latest version
   if (versions.size === 0) {
     return undefined;
   }
@@ -99,7 +97,6 @@ function createActivityWrapper(node: NodeDefinition) {
     const { logger, logs } = createLogger(params.context.step.id);
     const fullContext: NodeContext = { ...params.context, logger };
 
-    // Validate input using Zod schema
     let validatedInput = params.input;
     if (node.inputSchema) {
       const result = node.inputSchema.safeParse(params.input);
@@ -116,10 +113,9 @@ function createActivityWrapper(node: NodeDefinition) {
         );
       }
       
-      validatedInput = result.data; // Use parsed data (with defaults applied)
+      validatedInput = result.data;
     }
 
-    // Execute the node with validated input
     const startTime = Date.now();
     try {
       const result = await node.execute(validatedInput, fullContext);
@@ -146,13 +142,11 @@ export function createNodeActivities(): Record<string, Function> {
   const activities: Record<string, Function> = {};
 
   for (const [name, versions] of nodeRegistry) {
-    // Register each version as name@vN
     for (const [version, node] of versions) {
       const versionedName = `${name}@v${version}`;
       activities[versionedName] = createActivityWrapper(node);
     }
     
-    // Register latest as just name
     if (versions.size > 0) {
       const latestVersion = Math.max(...versions.keys());
       const latestNode = versions.get(latestVersion)!;
@@ -163,7 +157,6 @@ export function createNodeActivities(): Record<string, Function> {
   return activities;
 }
 
-// Get the directory name in ES module
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -173,7 +166,6 @@ export async function loadNodes(nodesDir: string = __dirname): Promise<void> {
   const files = await fs.promises.readdir(nodesDir);
   
   for (const file of files) {
-    // Match pattern: name.v1.node.ts or name.node.ts (defaults to v1)
     if (file.endsWith('.node.ts') || file.endsWith('.node.js')) {
       const filePath = path.join(nodesDir, file);
       const fileUrl = pathToFileURL(filePath).href;
@@ -192,5 +184,4 @@ export async function loadNodes(nodesDir: string = __dirname): Promise<void> {
   }
 }
 
-// Re-export types
 export * from '../types/node.js';

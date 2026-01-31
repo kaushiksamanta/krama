@@ -3,31 +3,22 @@ import vm from 'vm';
 import { pick, omit, orderBy, merge as lodashMerge, flattenDepth } from 'lodash-es';
 import { NodeDefinition, NodeContext, NodeExecutionError } from '../types/node.js';
 
-// ============================================================
-// Transform Node v1
-// ============================================================
-
-// Operation types
 const OperationType = z.enum([
   'pick', 'omit', 'rename', 'map', 'filter', 'sort', 'flatten', 'merge'
 ]);
 
-// Operation schema
 const OperationSchema = z.object({
   type: OperationType,
   config: z.unknown(), // Operation-specific configuration
 });
 
-// Define input schema with Zod
 const TransformInputSchema = z.object({
   data: z.unknown(),
   operations: z.array(OperationSchema).min(1, 'At least one operation required'),
 });
 
-// Infer TypeScript type from schema
 type TransformInput = z.infer<typeof TransformInputSchema>;
 
-// Define output schema with Zod
 const TransformOutputSchema = z.object({
   data: z.unknown(),
   operationsApplied: z.number(),
@@ -45,7 +36,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
 
   switch (type) {
     case 'pick': {
-      // Select specific fields: { fields: ['name', 'email'] }
       const cfg = config as { fields: string[] };
       if (!cfg?.fields || !Array.isArray(cfg.fields)) {
         throw new Error("'pick' operation requires 'fields' array");
@@ -57,7 +47,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'omit': {
-      // Remove specific fields: { fields: ['password'] }
       const cfg = config as { fields: string[] };
       if (!cfg?.fields || !Array.isArray(cfg.fields)) {
         throw new Error("'omit' operation requires 'fields' array");
@@ -69,7 +58,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'rename': {
-      // Rename fields: { mapping: { oldName: 'newName' } }
       const cfg = config as { mapping: Record<string, string> };
       if (!cfg?.mapping || typeof cfg.mapping !== 'object') {
         throw new Error("'rename' operation requires 'mapping' object");
@@ -92,7 +80,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'map': {
-      // Transform array items: { expression: 'item.value * 2' }
       const cfg = config as { expression: string; timeout?: number };
       if (!cfg?.expression || typeof cfg.expression !== 'string') {
         throw new Error("'map' operation requires 'expression' string");
@@ -116,7 +103,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'filter': {
-      // Filter array items: { expression: 'item.active === true' }
       const cfg = config as { expression: string; timeout?: number };
       if (!cfg?.expression || typeof cfg.expression !== 'string') {
         throw new Error("'filter' operation requires 'expression' string");
@@ -140,7 +126,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'sort': {
-      // Sort array: { field: 'createdAt', order: 'desc' } or { fields: ['a', 'b'], orders: ['asc', 'desc'] }
       const cfg = config as { 
         field?: string; 
         order?: 'asc' | 'desc';
@@ -151,13 +136,11 @@ function applyOperation(data: unknown, operation: Operation): unknown {
         throw new Error("'sort' operation requires array data");
       }
       
-      // Support multi-field sorting with lodash orderBy
       if (cfg?.fields && Array.isArray(cfg.fields)) {
         const orders = cfg.orders || cfg.fields.map(() => 'asc');
         return orderBy(data, cfg.fields, orders);
       }
       
-      // Single field sorting (backward compatible)
       const order = cfg?.order || 'asc';
       const field = cfg?.field;
       
@@ -165,12 +148,10 @@ function applyOperation(data: unknown, operation: Operation): unknown {
         return orderBy(data, [field], [order]);
       }
       
-      // Sort primitives directly
       return orderBy(data, [], [order]);
     }
 
     case 'flatten': {
-      // Flatten nested arrays: { depth: 1 }
       const cfg = config as { depth?: number };
       if (!Array.isArray(data)) {
         throw new Error("'flatten' operation requires array data");
@@ -180,7 +161,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
     }
 
     case 'merge': {
-      // Deep merge with another object: { source: { ... }, deep: true }
       const cfg = config as { source: Record<string, unknown>; deep?: boolean };
       if (!cfg?.source || typeof cfg.source !== 'object') {
         throw new Error("'merge' operation requires 'source' object");
@@ -188,7 +168,6 @@ function applyOperation(data: unknown, operation: Operation): unknown {
       if (typeof data !== 'object' || data === null) {
         return cfg.source;
       }
-      // Use lodash merge for deep merging (default), spread for shallow
       if (cfg.deep === false) {
         return { ...(data as Record<string, unknown>), ...cfg.source };
       }

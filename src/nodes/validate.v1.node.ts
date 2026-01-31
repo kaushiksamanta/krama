@@ -3,11 +3,6 @@ import vm from 'vm';
 import { get } from 'lodash-es';
 import { NodeDefinition, NodeContext } from '../types/node.js';
 
-// ============================================================
-// Validate Node v1
-// ============================================================
-
-// Define input schema with Zod
 const ValidateInputSchema = z.object({
   data: z.unknown(),
   rules: z.object({
@@ -18,10 +13,8 @@ const ValidateInputSchema = z.object({
   }),
 });
 
-// Infer TypeScript type from schema
 type ValidateInput = z.infer<typeof ValidateInputSchema>;
 
-// Define output schema with Zod
 const ValidateOutputSchema = z.object({
   isValid: z.boolean(),
   errors: z.array(z.string()).optional(),
@@ -67,7 +60,6 @@ const validateNode: NodeDefinition<ValidateInput, ValidateOutput> = {
 
     logger.info('Starting validation');
 
-    // Check required fields
     if (rules.required) {
       for (const field of rules.required) {
         const value = get(data, field);
@@ -77,7 +69,6 @@ const validateNode: NodeDefinition<ValidateInput, ValidateOutput> = {
       }
     }
 
-    // Check types
     if (rules.types) {
       for (const [field, expectedType] of Object.entries(rules.types as Record<string, string>)) {
         const value = get(data, field);
@@ -89,7 +80,6 @@ const validateNode: NodeDefinition<ValidateInput, ValidateOutput> = {
       }
     }
 
-    // Check patterns (regex)
     if (rules.patterns) {
       for (const [field, pattern] of Object.entries(rules.patterns as Record<string, string>)) {
         const value = get(data, field);
@@ -106,7 +96,6 @@ const validateNode: NodeDefinition<ValidateInput, ValidateOutput> = {
       }
     }
 
-    // Check custom validation (JS expression)
     if (rules.custom) {
       try {
         const sandbox = {

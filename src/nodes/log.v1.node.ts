@@ -1,21 +1,14 @@
 import { z } from 'zod';
 import { NodeDefinition, NodeContext } from '../types/node.js';
 
-// ============================================================
-// Log Node v1
-// ============================================================
-
-// Define input schema with Zod
 const LogInputSchema = z.object({
   message: z.string().min(1, 'Message is required'),
   level: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   data: z.unknown().optional(),
 });
 
-// Infer TypeScript type from schema
 type LogInput = z.infer<typeof LogInputSchema>;
 
-// Define output schema with Zod
 const LogOutputSchema = z.object({
   loggedAt: z.string(),
 });
@@ -48,7 +41,6 @@ const logNode: NodeDefinition<LogInput, LogOutput> = {
       ...(data !== undefined && { data }),
     };
 
-    // Log using the context logger with structured entry
     const logMessage = JSON.stringify(logEntry);
     switch (level) {
       case 'debug':

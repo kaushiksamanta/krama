@@ -23,7 +23,6 @@ describe('WorkflowDAG', () => {
     const dag = new WorkflowDAG(steps);
     const order = dag.getExecutionOrder();
 
-    // a must come before b, b before c
     expect(order.indexOf('a')).toBeLessThan(order.indexOf('b'));
     expect(order.indexOf('b')).toBeLessThan(order.indexOf('c'));
   });

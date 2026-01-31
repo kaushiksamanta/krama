@@ -12,7 +12,6 @@ describe('validate node', () => {
   it('validates required fields', async () => {
     const context = createMockContext();
 
-    // Valid - all required fields present
     const validResult = await validateNode.execute(
       {
         data: { name: 'John', email: 'john@example.com' },
@@ -23,7 +22,6 @@ describe('validate node', () => {
     expect(validResult.isValid).toBe(true);
     expect(validResult.errors).toBeUndefined();
 
-    // Invalid - missing required field
     const invalidResult = await validateNode.execute(
       {
         data: { name: 'John' },
@@ -38,7 +36,6 @@ describe('validate node', () => {
   it('validates field types', async () => {
     const context = createMockContext();
 
-    // Valid types
     const validResult = await validateNode.execute(
       {
         data: { name: 'John', age: 30, active: true },
@@ -48,7 +45,6 @@ describe('validate node', () => {
     );
     expect(validResult.isValid).toBe(true);
 
-    // Invalid type
     const invalidResult = await validateNode.execute(
       {
         data: { name: 'John', age: 'thirty' },
@@ -63,7 +59,6 @@ describe('validate node', () => {
   it('validates patterns (regex)', async () => {
     const context = createMockContext();
 
-    // Valid pattern
     const validResult = await validateNode.execute(
       {
         data: { email: 'test@example.com' },
@@ -73,7 +68,6 @@ describe('validate node', () => {
     );
     expect(validResult.isValid).toBe(true);
 
-    // Invalid pattern
     const invalidResult = await validateNode.execute(
       {
         data: { email: 'not-an-email' },
@@ -87,7 +81,6 @@ describe('validate node', () => {
   it('validates custom expressions', async () => {
     const context = createMockContext();
 
-    // Valid custom rule
     const validResult = await validateNode.execute(
       {
         data: { age: 25 },
@@ -97,7 +90,6 @@ describe('validate node', () => {
     );
     expect(validResult.isValid).toBe(true);
 
-    // Invalid custom rule
     const invalidResult = await validateNode.execute(
       {
         data: { age: 15 },

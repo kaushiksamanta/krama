@@ -5,11 +5,9 @@ import { fileURLToPath } from 'url';
 import { loadNodes, createNodeActivities } from './nodes/index.js';
 import { loadWorkflowDefinition } from './loader.js';
 
-// Get the directory name in ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Define the workflow interface
 export interface WorkflowInput {
   workflowId: string;
   taskQueue: string;
@@ -23,14 +21,12 @@ export interface WorkflowInput {
 export async function startWorkflow(options: WorkflowInput) {
   const { workflowId, taskQueue, workflowFile, inputs = {} } = options;
   
-  // Load and validate the workflow definition
   const workflowPath = path.isAbsolute(workflowFile) 
     ? workflowFile 
     : path.resolve(process.cwd(), workflowFile);
   
   const workflowDef = await loadWorkflowDefinition(workflowPath);
   
-  // Create a client to communicate with the Temporal server
   const temporalAddress = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
   const connection = await NativeConnection.connect({
     address: temporalAddress,
@@ -40,7 +36,6 @@ export async function startWorkflow(options: WorkflowInput) {
     connection,
   });
   
-  // Start the workflow
   const handle = await client.start('runWorkflow', {
     taskQueue,
     workflowId,
@@ -55,7 +50,6 @@ export async function startWorkflow(options: WorkflowInput) {
   
   console.log(`Started workflow ${workflowId} with run ID ${handle.firstExecutionRunId}`);
   
-  // Wait for workflow completion
   try {
     const result = await handle.result();
     console.log('Workflow completed successfully');
@@ -73,21 +67,17 @@ export async function startWorkflow(options: WorkflowInput) {
  * Start a worker to process workflow and activity tasks
  */
 export async function startWorker(taskQueue: string = 'default') {
-  // Load and register all nodes from the nodes directory
   const nodesDir = path.join(__dirname, 'nodes');
   await loadNodes(nodesDir);
   console.log('All nodes loaded and registered');
 
-  // Create Temporal activities from registered nodes
   const nodeActivities = createNodeActivities();
   console.log('Node activities created:', Object.keys(nodeActivities));
 
-  // Register workflows and activities
   const temporalAddress = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
   const worker = await Worker.create({
     connection: await NativeConnection.connect({ address: temporalAddress }),
     taskQueue,
-    // When using tsx in development, point directly at the TypeScript workflow file
     workflowsPath: new URL('./workflow.ts', import.meta.url).pathname,
     activities: nodeActivities,
   });
@@ -96,7 +86,6 @@ export async function startWorker(taskQueue: string = 'default') {
   await worker.run();
 }
 
-// Handle command line execution
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const command = process.argv[2];
   

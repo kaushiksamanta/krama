@@ -6,7 +6,6 @@ describe('email node', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    // Reset environment
     process.env = { ...originalEnv };
     delete process.env.SMTP_HOST;
     delete process.env.SMTP_USER;
@@ -57,7 +56,6 @@ describe('email node', () => {
   it('validates input schema', () => {
     expect(emailNode.inputSchema).toBeDefined();
 
-    // Valid input - single recipient
     const validSingle = emailNode.inputSchema?.safeParse({
       to: 'test@example.com',
       subject: 'Test',
@@ -65,7 +63,6 @@ describe('email node', () => {
     });
     expect(validSingle?.success).toBe(true);
 
-    // Valid input - multiple recipients
     const validMultiple = emailNode.inputSchema?.safeParse({
       to: ['a@example.com', 'b@example.com'],
       subject: 'Test',
@@ -73,7 +70,6 @@ describe('email node', () => {
     });
     expect(validMultiple?.success).toBe(true);
 
-    // Invalid - bad email
     const invalidEmail = emailNode.inputSchema?.safeParse({
       to: 'not-an-email',
       subject: 'Test',
@@ -81,7 +77,6 @@ describe('email node', () => {
     });
     expect(invalidEmail?.success).toBe(false);
 
-    // Invalid - empty subject
     const invalidSubject = emailNode.inputSchema?.safeParse({
       to: 'test@example.com',
       subject: '',

@@ -86,7 +86,6 @@ export class WorkflowExecutor {
     };
 
     try {
-      // Check dependencies
       const dependencies = this.dag.getDependencies(stepId);
       const depCheck = this.stepExecutor.checkDependencies(dependencies, this.context.results);
       if (depCheck.shouldSkip) {
@@ -95,10 +94,8 @@ export class WorkflowExecutor {
         return;
       }
 
-      // Build template context
       const templateContext = buildTemplateContext(this.context.inputs, this.context.results);
 
-      // Check 'when' condition
       const conditionCheck = this.stepExecutor.checkCondition(step, templateContext);
       if (conditionCheck.shouldSkip) {
         this.skipStep(stepResult, conditionCheck.reason!);
@@ -106,10 +103,8 @@ export class WorkflowExecutor {
         return;
       }
 
-      // Prepare input
       const activityInput = this.stepExecutor.prepareInput(step, templateContext);
 
-      // Execute based on step type
       if (step.type === 'signal') {
         await this.executeSignalStep(stepId, stepResult);
       } else if (step.type === 'code') {

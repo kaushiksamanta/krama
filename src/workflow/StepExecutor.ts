@@ -140,7 +140,6 @@ export class StepExecutor {
       context: nodeContext,
     });
 
-    // Validate result structure
     if (!codeResult || typeof codeResult !== 'object' || !('result' in codeResult)) {
       throw new Error(`Invalid code activity result structure for step '${stepId}'`);
     }
@@ -173,7 +172,6 @@ export class StepExecutor {
       context: nodeContext,
     });
 
-    // Validate result structure
     if (!nodeResult || typeof nodeResult !== 'object' || !('result' in nodeResult)) {
       throw new Error(`Invalid activity result structure for step '${stepId}'`);
     }

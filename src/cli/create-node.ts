@@ -15,13 +15,11 @@ if (!nodeName) {
   process.exit(1);
 }
 
-// Validate node name (allow lowercase, numbers, hyphens, and underscores)
 if (!/^[a-z][a-z0-9-_]*$/.test(nodeName)) {
   console.error('Node name must start with a lowercase letter and contain only lowercase letters, numbers, hyphens, or underscores');
   process.exit(1);
 }
 
-// Convert node name to PascalCase for class/type names
 function toPascalCase(str: string): string {
   return str
     .split(/[-_]/)
@@ -29,7 +27,6 @@ function toPascalCase(str: string): string {
     .join('');
 }
 
-// Convert node name to camelCase for variable names
 function toCamelCase(str: string): string {
   const pascal = toPascalCase(str);
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
@@ -38,7 +35,6 @@ function toCamelCase(str: string): string {
 const pascalName = toPascalCase(nodeName);
 const camelName = toCamelCase(nodeName);
 
-// Node file template
 const nodeTemplate = `import { z } from 'zod';
 import { NodeDefinition, NodeContext } from './types.js';
 
@@ -84,7 +80,6 @@ const ${camelName}Node: NodeDefinition<${pascalName}Input, ${pascalName}Output> 
 export default ${camelName}Node;
 `;
 
-// Test file template
 const testTemplate = `import { describe, it, expect, vi } from 'vitest';
 import ${camelName}Node from '../../src/nodes/${nodeName}.v1.node.js';
 import { createMockContext } from '../helpers/node-test-utils.js';
@@ -123,20 +118,17 @@ describe('${nodeName} node', () => {
 });
 `;
 
-// Determine paths
 const srcNodesDir = path.resolve(__dirname, '..', 'nodes');
 const testsNodesDir = path.resolve(__dirname, '..', '..', 'tests', 'nodes');
 
 const nodeFilePath = path.join(srcNodesDir, `${nodeName}.v1.node.ts`);
 const testFilePath = path.join(testsNodesDir, `${nodeName}.node.test.ts`);
 
-// Check if node already exists
 if (fs.existsSync(nodeFilePath)) {
   console.error(`Error: Node '${nodeName}' already exists at ${nodeFilePath}`);
   process.exit(1);
 }
 
-// Create directories if they don't exist
 if (!fs.existsSync(srcNodesDir)) {
   fs.mkdirSync(srcNodesDir, { recursive: true });
 }
@@ -144,7 +136,6 @@ if (!fs.existsSync(testsNodesDir)) {
   fs.mkdirSync(testsNodesDir, { recursive: true });
 }
 
-// Write files
 try {
   fs.writeFileSync(nodeFilePath, nodeTemplate);
   console.log(`✅ Created node: src/nodes/${nodeName}.v1.node.ts`);

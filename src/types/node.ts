@@ -4,13 +4,8 @@
 
 import { z } from 'zod';
 
-// ============================================================
-// Logger (interface only - functions can't be Zod validated)
-// ============================================================
-
 /**
  * Logger interface available to nodes.
- * Note: Functions cannot be validated with Zod, so this remains an interface.
  */
 export interface NodeLogger {
   debug(message: string, ...args: unknown[]): void;
@@ -18,10 +13,6 @@ export interface NodeLogger {
   warn(message: string, ...args: unknown[]): void;
   error(message: string, ...args: unknown[]): void;
 }
-
-// ============================================================
-// Node Context Schema
-// ============================================================
 
 /**
  * Zod schema for workflow metadata.
@@ -58,13 +49,8 @@ export interface NodeContext extends NodeContextData {
   logger: NodeLogger;
 }
 
-// ============================================================
-// Node Definition Schema
-// ============================================================
-
 /**
- * Zod schema for NodeDefinition metadata (without execute function).
- * Used for validation and documentation generation.
+ * Zod schema for NodeDefinition metadata.
  */
 export const NodeDefinitionMetaSchema = z.object({
   name: z.string().min(1).regex(/^[a-z][a-z0-9-]*$/, 'Must be lowercase with hyphens'),
@@ -110,13 +96,8 @@ export interface NodeDefinition<TInput = unknown, TOutput = unknown> extends Nod
   execute(input: TInput, context: NodeContext): Promise<TOutput>;
 }
 
-// ============================================================
-// Node Execution Result Schema
-// ============================================================
-
 /**
  * Zod schema factory for node execution result.
- * @param outputSchema - The Zod schema for the output type
  */
 export const NodeExecutionResultSchema = <T extends z.ZodType>(outputSchema: T) =>
   z.object({
@@ -135,10 +116,6 @@ export type NodeExecutionResult<T = unknown> = {
   logs: string[];
   executionTime: number;
 };
-
-// ============================================================
-// Error Handling
-// ============================================================
 
 export type NodeErrorCode = 
   | 'VALIDATION_ERROR'
