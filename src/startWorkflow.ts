@@ -31,8 +31,9 @@ export async function startWorkflow(options: WorkflowInput) {
   const workflowDef = await loadWorkflowDefinition(workflowPath);
   
   // Create a client to communicate with the Temporal server
+  const temporalAddress = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
   const connection = await NativeConnection.connect({
-    address: 'localhost:7233', // Default Temporal server address
+    address: temporalAddress,
   });
   
   const client = new WorkflowClient({
@@ -82,8 +83,9 @@ export async function startWorker(taskQueue: string = 'default') {
   console.log('Node activities created:', Object.keys(nodeActivities));
 
   // Register workflows and activities
+  const temporalAddress = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
   const worker = await Worker.create({
-    connection: await NativeConnection.connect({ address: 'localhost:7233' }),
+    connection: await NativeConnection.connect({ address: temporalAddress }),
     taskQueue,
     // When using tsx in development, point directly at the TypeScript workflow file
     workflowsPath: new URL('./workflow.ts', import.meta.url).pathname,

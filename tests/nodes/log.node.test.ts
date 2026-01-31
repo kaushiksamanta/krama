@@ -19,7 +19,13 @@ describe('log node', () => {
     );
 
     expect(result.loggedAt).toBeDefined();
-    expect(mockLogger.info).toHaveBeenCalledWith('Test message', '');
+    expect(mockLogger.info).toHaveBeenCalled();
+    // Verify the structured log entry contains expected fields
+    const logArg = mockLogger.info.mock.calls[0][0];
+    const logEntry = JSON.parse(logArg);
+    expect(logEntry.message).toBe('Test message');
+    expect(logEntry.level).toBe('info');
+    expect(logEntry.workflowId).toBe('test-workflow');
   });
 
   it('logs with different levels', async () => {
@@ -44,7 +50,12 @@ describe('log node', () => {
       context
     );
 
-    expect(mockLogger.info).toHaveBeenCalledWith('Test with data', { userId: 123 });
+    expect(mockLogger.info).toHaveBeenCalled();
+    // Verify the structured log entry contains the data
+    const logArg = mockLogger.info.mock.calls[0][0];
+    const logEntry = JSON.parse(logArg);
+    expect(logEntry.message).toBe('Test with data');
+    expect(logEntry.data).toEqual({ userId: 123 });
   });
 
   it('validates input schema', () => {

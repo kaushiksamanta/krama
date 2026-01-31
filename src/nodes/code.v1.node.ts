@@ -146,20 +146,27 @@ const codeNode: NodeDefinition<CodeInput, CodeOutput> = {
       script.runInContext(vmContext, { timeout });
 
       // Wait for async execution to complete with timeout
+      let timeoutId: ReturnType<typeof setTimeout>;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`Code execution timed out after ${timeout}ms`)), timeout);
+        timeoutId = setTimeout(() => reject(new Error(`Code execution timed out after ${timeout}ms`)), timeout);
       });
 
-      const result = await Promise.race([executionPromise, timeoutPromise]);
+      try {
+        const result = await Promise.race([executionPromise, timeoutPromise]);
+        clearTimeout(timeoutId!);
 
-      const executionTime = Date.now() - startTime;
-      logger.info(`Code execution completed in ${executionTime}ms`);
+        const executionTime = Date.now() - startTime;
+        logger.info(`Code execution completed in ${executionTime}ms`);
 
-      return {
-        result,
-        logs,
-        executionTime,
-      };
+        return {
+          result,
+          logs,
+          executionTime,
+        };
+      } catch (raceError) {
+        clearTimeout(timeoutId!);
+        throw raceError;
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       

@@ -91,6 +91,7 @@ export class WorkflowExecutor {
       const depCheck = this.stepExecutor.checkDependencies(dependencies, this.context.results);
       if (depCheck.shouldSkip) {
         this.skipStep(stepResult, depCheck.reason!);
+        this.saveResult(stepId, stepResult);
         return;
       }
 
@@ -101,6 +102,7 @@ export class WorkflowExecutor {
       const conditionCheck = this.stepExecutor.checkCondition(step, templateContext);
       if (conditionCheck.shouldSkip) {
         this.skipStep(stepResult, conditionCheck.reason!);
+        this.saveResult(stepId, stepResult);
         return;
       }
 
@@ -147,11 +149,11 @@ export class WorkflowExecutor {
 
   /**
    * Mark a step as skipped.
+   * Note: saveResult is called in the finally block of executeStep, not here.
    */
   private skipStep(stepResult: StepResult, reason: string): void {
     stepResult.status = 'skipped';
     stepResult.error = reason;
-    this.saveResult(stepResult.id, stepResult);
   }
 
   /**

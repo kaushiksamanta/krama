@@ -77,9 +77,13 @@ function applyOperation(data: unknown, operation: Operation): unknown {
       if (typeof data !== 'object' || data === null) {
         return data;
       }
+      const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
       const result: Record<string, unknown> = { ...(data as Record<string, unknown>) };
       for (const [oldKey, newKey] of Object.entries(cfg.mapping)) {
-        if (oldKey in result) {
+        if (dangerousKeys.includes(oldKey) || dangerousKeys.includes(newKey)) {
+          throw new Error(`Dangerous key in rename mapping: '${oldKey}' -> '${newKey}'`);
+        }
+        if (Object.prototype.hasOwnProperty.call(result, oldKey)) {
           result[newKey] = result[oldKey];
           delete result[oldKey];
         }

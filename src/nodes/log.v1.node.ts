@@ -48,24 +48,22 @@ const logNode: NodeDefinition<LogInput, LogOutput> = {
       ...(data !== undefined && { data }),
     };
 
-    // Log using the context logger
+    // Log using the context logger with structured entry
+    const logMessage = JSON.stringify(logEntry);
     switch (level) {
       case 'debug':
-        logger.debug(message, data !== undefined ? data : '');
+        logger.debug(logMessage);
         break;
       case 'info':
-        logger.info(message, data !== undefined ? data : '');
+        logger.info(logMessage);
         break;
       case 'warn':
-        logger.warn(message, data !== undefined ? data : '');
+        logger.warn(logMessage);
         break;
       case 'error':
-        logger.error(message, data !== undefined ? data : '');
+        logger.error(logMessage);
         break;
     }
-
-    // Also output to console for audit trail
-    console.log(JSON.stringify(logEntry));
 
     return {
       loggedAt: timestamp,

@@ -128,15 +128,25 @@ export class StepExecutor {
     }
 
     const proxy = this.createActivityProxy(step);
+    if (typeof proxy.code !== 'function') {
+      throw new Error(`Activity 'code' is not registered`);
+    }
+    
     const codeResult = await proxy.code({
       input: {
         code: step.code,
         timeout: step.timeout?.startToClose ? parseDurationToMs(step.timeout.startToClose) : 30000,
       },
       context: nodeContext,
-    }) as CodeNodeResult;
+    });
 
-    return codeResult.result.result;
+    // Validate result structure
+    if (!codeResult || typeof codeResult !== 'object' || !('result' in codeResult)) {
+      throw new Error(`Invalid code activity result structure for step '${stepId}'`);
+    }
+    const typedResult = codeResult as CodeNodeResult;
+    
+    return typedResult.result.result;
   }
 
   /**
@@ -154,11 +164,21 @@ export class StepExecutor {
     }
 
     const proxy = this.createActivityProxy(step);
+    if (typeof proxy[activityName] !== 'function') {
+      throw new Error(`Activity '${activityName}' is not registered`);
+    }
+    
     const nodeResult = await proxy[activityName]({
       input: activityInput,
       context: nodeContext,
-    }) as NodeActivityResult;
+    });
 
-    return nodeResult.result;
+    // Validate result structure
+    if (!nodeResult || typeof nodeResult !== 'object' || !('result' in nodeResult)) {
+      throw new Error(`Invalid activity result structure for step '${stepId}'`);
+    }
+    const typedResult = nodeResult as NodeActivityResult;
+    
+    return typedResult.result;
   }
 }

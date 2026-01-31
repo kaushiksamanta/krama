@@ -37,7 +37,7 @@ function parseDuration(duration: string | number): number {
 
   const match = duration.match(/^(\d+)([smhd])$/);
   if (!match) {
-    return 0;
+    throw new Error(`Invalid duration format: '${duration}'. Expected formats: 5s, 1m, 2h, or 1d`);
   }
 
   const value = parseInt(match[1], 10);
