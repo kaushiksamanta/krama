@@ -4,15 +4,8 @@ import { StepExecutor } from './StepExecutor.js';
 import { buildTemplateContext } from './utils.js';
 import type { ExecutorWorkflowDefinition, StepResult, WorkflowContext } from '../types/index.js';
 
-/**
- * Signal to cancel workflow execution.
- */
 export const cancelSignal = defineSignal('cancel');
-
-/**
- * Signal to deliver payloads to signal-type steps.
- */
-export const stepSignal = defineSignal<[stepId: string, payload: unknown]>('step');
+export const stepSignal = defineSignal<[{ stepId: string; payload: unknown }]>('step');
 
 /**
  * Orchestrates the execution of a workflow DAG.
@@ -48,7 +41,7 @@ export class WorkflowExecutor {
       this.isCancelled = true;
     });
 
-    setHandler(stepSignal, (stepId: string, payload: unknown) => {
+    setHandler(stepSignal, ({ stepId, payload }: { stepId: string; payload: unknown }) => {
       this.signalResults[stepId] = payload;
     });
   }

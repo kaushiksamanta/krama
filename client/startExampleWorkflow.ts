@@ -41,8 +41,8 @@ async function main() {
 
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  console.log('Sending approval signal to workflow...');
-  await handle.signal('step', 'approval', { approved: true });
+  console.log('Sending profile completion signal to workflow...');
+  await handle.signal('step', { stepId: 'await_profile_completion', payload: { profileCompleted: true } });
 
   const result = await handle.result();
   console.log('Workflow completed. Final results:');
