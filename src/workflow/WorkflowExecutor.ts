@@ -18,7 +18,6 @@ export const stepSignal = defineSignal<[stepId: string, payload: unknown]>('step
  * Orchestrates the execution of a workflow DAG.
  */
 export class WorkflowExecutor {
-  private readonly definition: ExecutorWorkflowDefinition;
   private readonly dag: WorkflowDAG;
   private readonly stepExecutor: StepExecutor;
   private readonly results: Record<string, StepResult> = {};
@@ -27,7 +26,6 @@ export class WorkflowExecutor {
   private isCancelled = false;
 
   constructor(definition: ExecutorWorkflowDefinition) {
-    this.definition = definition;
     this.dag = new WorkflowDAG(definition.steps);
     this.context = {
       inputs: definition.inputs ?? {},
