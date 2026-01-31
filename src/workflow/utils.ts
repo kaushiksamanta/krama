@@ -4,10 +4,14 @@ import type { TemplateContext } from '../types/index.js';
 
 /**
  * Parse duration strings like '5s', '1m', '2h' to milliseconds.
+ * @throws Error if the duration string is invalid
  */
 export function parseDurationToMs(duration: string): number {
   const result = ms(duration as ms.StringValue);
-  return typeof result === 'number' ? result : 0;
+  if (typeof result !== 'number') {
+    throw new Error(`Invalid duration format: '${duration}'. Expected formats like '5s', '1m', '2h', '1d'.`);
+  }
+  return result;
 }
 
 /**
@@ -71,6 +75,24 @@ export function resolvePath(obj: unknown, path: string): unknown {
 
 /**
  * Evaluate a 'when' condition using Mustache rendering.
+ * 
+ * The condition is considered **falsy** (step will be skipped) if the rendered result is:
+ * - Empty string `''`
+ * - The string `'false'`
+ * - The string `'0'`
+ * 
+ * All other rendered values are considered **truthy** (step will execute).
+ * 
+ * @example
+ * // Truthy conditions (step executes):
+ * when: '{{inputs.enabled}}'        // if inputs.enabled = true -> 'true'
+ * when: '{{inputs.count}}'          // if inputs.count = 5 -> '5'
+ * when: '{{step.validate.result.isValid}}' // if isValid = true -> 'true'
+ * 
+ * // Falsy conditions (step skipped):
+ * when: '{{inputs.enabled}}'        // if inputs.enabled = false -> 'false'
+ * when: '{{inputs.count}}'          // if inputs.count = 0 -> '0'
+ * when: '{{inputs.missing}}'        // if missing is undefined -> ''
  */
 export function evaluateCondition(condition: string, templateContext: TemplateContext): boolean {
   const rendered = Mustache.render(condition, templateContext).trim();

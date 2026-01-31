@@ -100,49 +100,54 @@ const emailNode: NodeDefinition<EmailInput, EmailOutput> = {
     }
 
     // Production implementation would use nodemailer or similar
-    // For now, throw an error indicating real SMTP is not yet implemented
-    try {
-      // TODO: Implement actual SMTP sending with nodemailer
-      // const transporter = nodemailer.createTransport({
-      //   host: smtpHost,
-      //   port: parseInt(process.env.SMTP_PORT || '587'),
-      //   secure: process.env.SMTP_SECURE === 'true',
-      //   auth: { user: smtpUser, pass: smtpPass },
-      // });
-      //
-      // const info = await transporter.sendMail({
-      //   from: from || smtpUser,
-      //   to: toList,
-      //   cc: ccList,
-      //   bcc: bccList,
-      //   replyTo,
-      //   subject,
-      //   html: body,
-      //   attachments: attachments?.map(a => ({
-      //     filename: a.filename,
-      //     content: Buffer.from(a.content, 'base64'),
-      //     contentType: a.contentType,
-      //   })),
-      // });
+    // For now, simulate sending since actual SMTP is not yet implemented
+    // TODO: Implement actual SMTP sending with nodemailer
+    // const transporter = nodemailer.createTransport({
+    //   host: smtpHost,
+    //   port: parseInt(process.env.SMTP_PORT || '587'),
+    //   secure: process.env.SMTP_SECURE === 'true',
+    //   auth: { user: smtpUser, pass: smtpPass },
+    // });
+    //
+    // const info = await transporter.sendMail({
+    //   from: from || smtpUser,
+    //   to: toList,
+    //   cc: ccList,
+    //   bcc: bccList,
+    //   replyTo,
+    //   subject,
+    //   html: body,
+    //   attachments: attachments?.map(a => ({
+    //     filename: a.filename,
+    //     content: Buffer.from(a.content, 'base64'),
+    //     contentType: a.contentType,
+    //   })),
+    // });
 
-      // Simulate for now
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    logger.warn('SMTP configured but actual sending not yet implemented. Simulating email send.');
+    
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const messageId = `simulated_smtp_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
-      logger.info(`Email sent successfully. Message ID: ${messageId}`);
-
-      return {
-        messageId,
-        status: 'sent',
-      };
-    } catch (error) {
-      throw new NodeExecutionError(
-        'email',
-        error instanceof Error ? error.message : 'Failed to send email',
-        'EXECUTION_ERROR',
-        { to: toList, subject }
-      );
+    // Log the email details for debugging
+    console.log('=== SIMULATED EMAIL (SMTP configured) ===');
+    console.log(`From: ${from || smtpUser}`);
+    console.log(`To: ${toList.join(', ')}`);
+    if (ccList.length > 0) console.log(`CC: ${ccList.join(', ')}`);
+    if (bccList.length > 0) console.log(`BCC: ${bccList.join(', ')}`);
+    if (replyTo) console.log(`Reply-To: ${replyTo}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Body:\n${body}`);
+    if (attachments && attachments.length > 0) {
+      console.log(`Attachments: ${attachments.map(a => a.filename).join(', ')}`);
     }
+    console.log('=== END EMAIL ===');
+
+    return {
+      messageId,
+      status: 'simulated',
+    };
   },
 };
 

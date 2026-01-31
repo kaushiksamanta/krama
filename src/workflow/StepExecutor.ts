@@ -91,7 +91,7 @@ export class StepExecutor {
       workflowInputs: stepInput ? { ...inputs, __stepInput__: stepInput } : inputs,
       stepResults: Object.entries(results).reduce((acc, [id, result]) => ({
         ...acc,
-        [id]: result.output
+        [id]: result?.output
       }), {} as Record<string, unknown>),
       workflow: { id: this.config.workflowId, name: this.config.workflowName },
       step: { id: stepId, attempt: 1 },

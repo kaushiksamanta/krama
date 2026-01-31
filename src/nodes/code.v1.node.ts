@@ -107,20 +107,33 @@ const codeNode: NodeDefinition<CodeInput, CodeOutput> = {
       // Async utilities
       setTimeout: globalThis.setTimeout,
       clearTimeout: globalThis.clearTimeout,
-      // Result placeholder
-      __result__: undefined as unknown,
-      __error__: undefined as unknown,
-      __completed__: false,
+      // Result placeholder - resolve/reject will be added before execution
+      __resolve__: (_: unknown) => {},
+      __reject__: (_: unknown) => {},
     };
 
     // Wrap the code in an async IIFE to support await and return
+    // We use a Promise-based approach to properly handle async completion
     const wrappedCode = `
       (async () => {
         ${code}
-      })().then(r => { __result__ = r; __completed__ = true; }).catch(e => { __error__ = e; __completed__ = true; });
+      })().then(r => { __resolve__(r); }).catch(e => { __reject__(e); });
     `;
 
     try {
+      // Create a Promise that will be resolved/rejected from within the VM
+      let resolveExecution: (value: unknown) => void;
+      let rejectExecution: (error: unknown) => void;
+      
+      const executionPromise = new Promise<unknown>((resolve, reject) => {
+        resolveExecution = resolve;
+        rejectExecution = reject;
+      });
+
+      // Add resolve/reject functions to sandbox
+      sandbox.__resolve__ = resolveExecution!;
+      sandbox.__reject__ = rejectExecution!;
+
       // Create VM context
       const vmContext = vm.createContext(sandbox);
       
@@ -129,33 +142,21 @@ const codeNode: NodeDefinition<CodeInput, CodeOutput> = {
         filename: 'workflow-code-step.js',
       });
 
-      // Run the script with timeout
+      // Run the script (this starts the async IIFE)
       script.runInContext(vmContext, { timeout });
 
-      // Wait for async execution to complete
-      const maxWait = timeout;
-      const pollInterval = 10;
-      let waited = 0;
+      // Wait for async execution to complete with timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Code execution timed out after ${timeout}ms`)), timeout);
+      });
 
-      while (!sandbox.__completed__ && waited < maxWait) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        waited += pollInterval;
-      }
-
-      // Check for errors that occurred during async execution
-      if (sandbox.__error__) {
-        const errorMessage = sandbox.__error__ instanceof Error 
-          ? sandbox.__error__.message 
-          : String(sandbox.__error__);
-        logs.push(`[EXECUTION ERROR] ${errorMessage}`);
-        throw new Error(`Code execution failed: ${errorMessage}`);
-      }
+      const result = await Promise.race([executionPromise, timeoutPromise]);
 
       const executionTime = Date.now() - startTime;
       logger.info(`Code execution completed in ${executionTime}ms`);
 
       return {
-        result: sandbox.__result__,
+        result,
         logs,
         executionTime,
       };

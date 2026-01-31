@@ -270,11 +270,14 @@ class StepExecutor {
 
 Utility functions for workflow execution:
 
-- `parseDurationToMs(duration)` - Parse duration strings using `ms` library
+- `parseDurationToMs(duration)` - Parse duration strings using `ms` library. **Throws an error** for invalid formats (e.g., `'invalid'`) rather than silently returning 0.
 - `buildTemplateContext(inputs, results)` - Build Mustache context
-- `renderValue(value, context)` - Recursively render templates
+- `renderValue(value, context)` - Recursively render templates, preserving object types for single mustache tags
 - `resolvePath(obj, path)` - Resolve dot-notation paths
-- `evaluateCondition(condition, context)` - Evaluate when clauses
+- `evaluateCondition(condition, context)` - Evaluate `when` clauses. Returns `false` (step skipped) for:
+  - Empty string `''`
+  - The string `'false'`
+  - The string `'0'`
 
 ### 2. Node Plugin System (`src/nodes/`)
 
@@ -299,12 +302,12 @@ interface NodeDefinition<TInput, TOutput> {
 | Node | Description | Key Features |
 |------|-------------|--------------|
 | `http` | HTTP requests | GET/POST/PUT/DELETE, headers, body |
-| `code` | JavaScript execution | Sandboxed VM, async support |
+| `code` | JavaScript execution | Sandboxed VM, async/await support, Promise-based timeout |
 | `log` | Audit logging | Structured JSON output |
-| `email` | Send emails | SMTP or simulation mode |
+| `email` | Send emails | SMTP config detection, simulation mode (always returns `'simulated'` status until SMTP is fully implemented) |
 | `validate` | Data validation | Required, types, patterns, custom |
 | `wait` | Delay execution | Duration strings (5s, 1m, 2h) |
-| `transform` | Data transformation | pick, omit, map, filter, sort |
+| `transform` | Data transformation | pick, omit, map, filter, sort (with index-aware error messages) |
 
 ### 3. DSL Loader (`src/loader.ts`)
 

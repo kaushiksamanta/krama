@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import vm from 'vm';
+import { pick, omit, orderBy, merge as lodashMerge, flattenDepth } from 'lodash-es';
 import { NodeDefinition, NodeContext, NodeExecutionError } from '../types/node.js';
 
 // ============================================================
@@ -52,13 +53,7 @@ function applyOperation(data: unknown, operation: Operation): unknown {
       if (typeof data !== 'object' || data === null) {
         return data;
       }
-      const result: Record<string, unknown> = {};
-      for (const field of cfg.fields) {
-        if (field in (data as Record<string, unknown>)) {
-          result[field] = (data as Record<string, unknown>)[field];
-        }
-      }
-      return result;
+      return pick(data as Record<string, unknown>, cfg.fields);
     }
 
     case 'omit': {
@@ -70,11 +65,7 @@ function applyOperation(data: unknown, operation: Operation): unknown {
       if (typeof data !== 'object' || data === null) {
         return data;
       }
-      const result: Record<string, unknown> = { ...(data as Record<string, unknown>) };
-      for (const field of cfg.fields) {
-        delete result[field];
-      }
-      return result;
+      return omit(data as Record<string, unknown>, cfg.fields);
     }
 
     case 'rename': {
@@ -98,62 +89,80 @@ function applyOperation(data: unknown, operation: Operation): unknown {
 
     case 'map': {
       // Transform array items: { expression: 'item.value * 2' }
-      const cfg = config as { expression: string };
+      const cfg = config as { expression: string; timeout?: number };
       if (!cfg?.expression || typeof cfg.expression !== 'string') {
         throw new Error("'map' operation requires 'expression' string");
       }
       if (!Array.isArray(data)) {
         throw new Error("'map' operation requires array data");
       }
+      const expressionTimeout = cfg.timeout ?? 1000;
       return data.map((item, index) => {
-        const sandbox = { item, index, __result__: undefined as unknown };
-        const vmContext = vm.createContext(sandbox);
-        const script = new vm.Script(`__result__ = ${cfg.expression}`);
-        script.runInContext(vmContext, { timeout: 1000 });
-        return sandbox.__result__;
+        try {
+          const sandbox = { item, index, __result__: undefined as unknown };
+          const vmContext = vm.createContext(sandbox);
+          const script = new vm.Script(`__result__ = ${cfg.expression}`);
+          script.runInContext(vmContext, { timeout: expressionTimeout });
+          return sandbox.__result__;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          throw new Error(`'map' operation failed at index ${index}: ${errorMsg}`);
+        }
       });
     }
 
     case 'filter': {
       // Filter array items: { expression: 'item.active === true' }
-      const cfg = config as { expression: string };
+      const cfg = config as { expression: string; timeout?: number };
       if (!cfg?.expression || typeof cfg.expression !== 'string') {
         throw new Error("'filter' operation requires 'expression' string");
       }
       if (!Array.isArray(data)) {
         throw new Error("'filter' operation requires array data");
       }
+      const expressionTimeout = cfg.timeout ?? 1000;
       return data.filter((item, index) => {
-        const sandbox = { item, index, __result__: false };
-        const vmContext = vm.createContext(sandbox);
-        const script = new vm.Script(`__result__ = ${cfg.expression}`);
-        script.runInContext(vmContext, { timeout: 1000 });
-        return sandbox.__result__;
+        try {
+          const sandbox = { item, index, __result__: false };
+          const vmContext = vm.createContext(sandbox);
+          const script = new vm.Script(`__result__ = ${cfg.expression}`);
+          script.runInContext(vmContext, { timeout: expressionTimeout });
+          return sandbox.__result__;
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          throw new Error(`'filter' operation failed at index ${index}: ${errorMsg}`);
+        }
       });
     }
 
     case 'sort': {
-      // Sort array: { field: 'createdAt', order: 'desc' }
-      const cfg = config as { field?: string; order?: 'asc' | 'desc' };
+      // Sort array: { field: 'createdAt', order: 'desc' } or { fields: ['a', 'b'], orders: ['asc', 'desc'] }
+      const cfg = config as { 
+        field?: string; 
+        order?: 'asc' | 'desc';
+        fields?: string[];  // For multi-field sorting
+        orders?: ('asc' | 'desc')[];  // Corresponding orders
+      };
       if (!Array.isArray(data)) {
         throw new Error("'sort' operation requires array data");
       }
-      const sorted = [...data];
+      
+      // Support multi-field sorting with lodash orderBy
+      if (cfg?.fields && Array.isArray(cfg.fields)) {
+        const orders = cfg.orders || cfg.fields.map(() => 'asc');
+        return orderBy(data, cfg.fields, orders);
+      }
+      
+      // Single field sorting (backward compatible)
       const order = cfg?.order || 'asc';
       const field = cfg?.field;
-
-      sorted.sort((a, b) => {
-        const aVal = field ? (a as Record<string, unknown>)?.[field] : a;
-        const bVal = field ? (b as Record<string, unknown>)?.[field] : b;
-
-        let comparison = 0;
-        if (aVal < bVal) comparison = -1;
-        else if (aVal > bVal) comparison = 1;
-
-        return order === 'desc' ? -comparison : comparison;
-      });
-
-      return sorted;
+      
+      if (field) {
+        return orderBy(data, [field], [order]);
+      }
+      
+      // Sort primitives directly
+      return orderBy(data, [], [order]);
     }
 
     case 'flatten': {
@@ -163,19 +172,23 @@ function applyOperation(data: unknown, operation: Operation): unknown {
         throw new Error("'flatten' operation requires array data");
       }
       const depth = cfg?.depth ?? 1;
-      return data.flat(depth);
+      return flattenDepth(data, depth);
     }
 
     case 'merge': {
-      // Merge with another object: { source: { ... } }
-      const cfg = config as { source: Record<string, unknown> };
+      // Deep merge with another object: { source: { ... }, deep: true }
+      const cfg = config as { source: Record<string, unknown>; deep?: boolean };
       if (!cfg?.source || typeof cfg.source !== 'object') {
         throw new Error("'merge' operation requires 'source' object");
       }
       if (typeof data !== 'object' || data === null) {
         return cfg.source;
       }
-      return { ...(data as Record<string, unknown>), ...cfg.source };
+      // Use lodash merge for deep merging (default), spread for shallow
+      if (cfg.deep === false) {
+        return { ...(data as Record<string, unknown>), ...cfg.source };
+      }
+      return lodashMerge({}, data, cfg.source);
     }
 
     default:

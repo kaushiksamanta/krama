@@ -45,6 +45,9 @@ export function getNode(name: string, version?: number): NodeDefinition | undefi
   }
   
   // Return latest version
+  if (versions.size === 0) {
+    return undefined;
+  }
   const latestVersion = Math.max(...versions.keys());
   return versions.get(latestVersion);
 }
@@ -150,9 +153,11 @@ export function createNodeActivities(): Record<string, Function> {
     }
     
     // Register latest as just name
-    const latestVersion = Math.max(...versions.keys());
-    const latestNode = versions.get(latestVersion)!;
-    activities[name] = createActivityWrapper(latestNode);
+    if (versions.size > 0) {
+      const latestVersion = Math.max(...versions.keys());
+      const latestNode = versions.get(latestVersion)!;
+      activities[name] = createActivityWrapper(latestNode);
+    }
   }
 
   return activities;
