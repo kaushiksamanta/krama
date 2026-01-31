@@ -1,111 +1,196 @@
 name: payment-processing
 version: 1.0.0
-description: Process payment with validation, fraud check, and notification
+description: |
+  Self-contained payment processing workflow with fraud detection,
+  payment simulation, and notifications - no external API dependencies.
 
 inputs:
   payment:
-    amount: number
-    currency: string
-    paymentMethod: string
-    customerId: string
+    amount: 149.99
+    currency: "USD"
+    paymentMethod: "credit_card"
+    customerId: "CUST-12345"
+    cardLast4: "4242"
   customer:
-    email: string
-    name: string
+    email: "customer@example.com"
+    name: "John Smith"
 
 steps:
   # Step 1: Validate payment details
   - id: validate_payment
-    activity: validateInput
+    activity: validate
     input:
       data: "{{inputs.payment}}"
       rules:
         required: ["amount", "currency", "paymentMethod", "customerId"]
-    retry:
-      count: 2
-      initialInterval: 1s
+        types:
+          amount: "number"
+          currency: "string"
+        custom: "data.amount > 0 && data.amount <= 10000"
 
-  # Step 2: Check for fraud (runs only if validation passes)
+  # Step 2: Fraud detection (simulated via code)
   - id: fraud_check
-    activity: fetchData
+    type: code
     dependsOn: ["validate_payment"]
     when: "{{step.validate_payment.result.isValid}}"
     input:
-      url: "https://api.fraud-detection.example/check"
-      method: "POST"
-      data:
-        customerId: "{{inputs.payment.customerId}}"
-        amount: "{{inputs.payment.amount}}"
-    timeout:
-      startToClose: 10s
-    retry:
-      count: 3
-      initialInterval: 2s
-      backoffCoefficient: 2.0
+      payment: "{{inputs.payment}}"
+      customer: "{{inputs.customer}}"
+    code: |
+      // Simulate fraud detection algorithm
+      const payment = input.payment;
+      const customer = input.customer;
+      
+      let riskScore = 0;
+      const riskFactors = [];
+      
+      // Check amount thresholds
+      if (payment.amount > 1000) {
+        riskScore += 0.2;
+        riskFactors.push('High value transaction');
+      }
+      if (payment.amount > 5000) {
+        riskScore += 0.3;
+        riskFactors.push('Very high value transaction');
+      }
+      
+      // Check for suspicious patterns (simulated)
+      const hour = new Date().getHours();
+      if (hour >= 1 && hour <= 5) {
+        riskScore += 0.15;
+        riskFactors.push('Unusual transaction time');
+      }
+      
+      // Customer history simulation (normally would check database)
+      const isNewCustomer = payment.customerId.includes('NEW');
+      if (isNewCustomer) {
+        riskScore += 0.1;
+        riskFactors.push('New customer account');
+      }
+      
+      const decision = riskScore < 0.5 ? 'approve' : 'review';
+      
+      console.log('Fraud check completed');
+      console.log('Risk score:', riskScore);
+      console.log('Decision:', decision);
+      
+      return {
+        riskScore: Math.round(riskScore * 100) / 100,
+        riskFactors,
+        decision,
+        checkedAt: new Date().toISOString()
+      };
 
-  # Step 3: Process payment (only if fraud check passes)
+  # Step 3: Process payment (simulated)
   - id: process_payment
-    activity: processPayment
+    type: code
     dependsOn: ["fraud_check"]
-    when: "{{step.fraud_check.result.riskScore}} < 0.5"
+    when: "{{step.fraud_check.result.decision}} == 'approve'"
     input:
-      amount: "{{inputs.payment.amount}}"
-      currency: "{{inputs.payment.currency}}"
-      paymentMethod: "{{inputs.payment.paymentMethod}}"
-      description: "Payment for customer {{inputs.payment.customerId}}"
-    timeout:
-      startToClose: 30s
-    retry:
-      count: 3
-      initialInterval: 5s
-      backoffCoefficient: 2.0
+      payment: "{{inputs.payment}}"
+      fraudResult: "{{step.fraud_check.result}}"
+    code: |
+      // Simulate payment processing
+      const payment = input.payment;
+      const transactionId = 'TXN-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      
+      // Simulate processing delay check
+      const processingFee = Math.round(payment.amount * 0.029 * 100) / 100; // 2.9% fee
+      const netAmount = Math.round((payment.amount - processingFee) * 100) / 100;
+      
+      console.log('Processing payment:', transactionId);
+      console.log('Amount:', payment.amount, payment.currency);
+      console.log('Processing fee:', processingFee);
+      
+      return {
+        transactionId,
+        status: 'completed',
+        amount: payment.amount,
+        currency: payment.currency,
+        processingFee,
+        netAmount,
+        paymentMethod: payment.paymentMethod,
+        cardLast4: payment.cardLast4,
+        processedAt: new Date().toISOString()
+      };
 
   # Step 4: Send success notification
   - id: send_success_email
-    activity: sendEmail
+    activity: email
     dependsOn: ["process_payment"]
     when: "{{step.process_payment.result.status}} == 'completed'"
     input:
       to: "{{inputs.customer.email}}"
-      subject: "Payment Successful"
+      subject: "Payment Successful - {{step.process_payment.result.transactionId}}"
       body: |
         Dear {{inputs.customer.name}},
         
-        Your payment of {{inputs.payment.amount}} {{inputs.payment.currency}} has been processed successfully.
+        Your payment has been processed successfully.
         
-        Transaction ID: {{step.process_payment.result.transactionId}}
+        Transaction Details:
+        - Transaction ID: {{step.process_payment.result.transactionId}}
+        - Amount: {{inputs.payment.amount}} {{inputs.payment.currency}}
+        - Card ending in: {{inputs.payment.cardLast4}}
+        - Date: {{step.process_payment.result.processedAt}}
         
         Thank you for your business!
-    retry:
-      count: 2
-      initialInterval: 3s
 
   # Step 5: Log transaction
   - id: log_transaction
-    activity: logMessage
+    activity: log
     dependsOn: ["process_payment"]
     input:
       level: "info"
-      message: "Payment processed"
-      context:
+      message: "Payment processed successfully"
+      data:
         transactionId: "{{step.process_payment.result.transactionId}}"
         customerId: "{{inputs.payment.customerId}}"
         amount: "{{inputs.payment.amount}}"
         currency: "{{inputs.payment.currency}}"
         status: "{{step.process_payment.result.status}}"
+        riskScore: "{{step.fraud_check.result.riskScore}}"
 
-  # Step 6: Handle fraud case (only if fraud detected)
-  - id: send_fraud_alert
-    activity: sendEmail
+  # Step 6: Handle fraud case (only if flagged for review)
+  - id: handle_fraud_review
+    type: code
     dependsOn: ["fraud_check"]
-    when: "{{step.fraud_check.result.riskScore}} >= 0.5"
+    when: "{{step.fraud_check.result.decision}} == 'review'"
+    input:
+      payment: "{{inputs.payment}}"
+      customer: "{{inputs.customer}}"
+      fraudResult: "{{step.fraud_check.result}}"
+    code: |
+      // Create fraud review case
+      const caseId = 'FRAUD-' + Date.now();
+      
+      console.log('Creating fraud review case:', caseId);
+      
+      return {
+        caseId,
+        status: 'pending_review',
+        payment: input.payment,
+        customer: input.customer,
+        riskScore: input.fraudResult.riskScore,
+        riskFactors: input.fraudResult.riskFactors,
+        createdAt: new Date().toISOString()
+      };
+
+  # Step 7: Send fraud alert email
+  - id: send_fraud_alert
+    activity: email
+    dependsOn: ["handle_fraud_review"]
     input:
       to: "security@example.com"
-      subject: "Fraud Alert - High Risk Transaction"
+      subject: "Fraud Alert - Case {{step.handle_fraud_review.result.caseId}}"
       body: |
-        High risk transaction detected:
+        High risk transaction flagged for review:
         
-        Customer ID: {{inputs.payment.customerId}}
+        Case ID: {{step.handle_fraud_review.result.caseId}}
+        Customer: {{inputs.customer.name}} ({{inputs.payment.customerId}})
         Amount: {{inputs.payment.amount}} {{inputs.payment.currency}}
         Risk Score: {{step.fraud_check.result.riskScore}}
         
-        Please review immediately.
+        Risk Factors:
+        {{step.fraud_check.result.riskFactors}}
+        
+        Please review this transaction immediately.

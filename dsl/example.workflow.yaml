@@ -1,104 +1,148 @@
 name: user-registration
 version: 1.0.0
-description: A realistic workflow that validates user input, creates account, sends emails, and waits for approval
+description: |
+  Self-contained user registration workflow demonstrating validation, 
+  user creation, email notifications, and approval flow.
 
-# Define inputs that can be provided when starting the workflow
 inputs:
   user:
-    name: string
-    email: string
-    password: string
+    name: "Jane Doe"
+    email: "jane.doe@example.com"
+    password: "securePassword123"
+    plan: "premium"
 
-# Define the steps of the workflow
 steps:
   # Step 1: Validate user input
   - id: validate_input
-    activity: validateInput
+    activity: validate
     input:
       data: "{{inputs.user}}"
       rules:
         required: ["name", "email", "password"]
-        email: ["email"]
-        minLength:
-          password: 8
+        patterns:
+          email: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+        custom: "data.password.length >= 8"
 
-  # Step 2: Create user in database (only if validation passed)
+  # Step 2: Create user (simulated via code step)
   - id: create_user
-    activity: createUser
+    type: code
     dependsOn: ["validate_input"]
     when: "{{step.validate_input.result.isValid}}"
     input:
-      name: "{{inputs.user.name}}"
-      email: "{{inputs.user.email}}"
-      password: "{{inputs.user.password}}"
-    retry:
-      count: 3
-      initialInterval: 1s
-      backoffCoefficient: 2.0
+      userData: "{{inputs.user}}"
+    code: |
+      // Simulate user creation in database
+      const userId = 'USR-' + Date.now();
+      
+      const user = {
+        userId,
+        name: input.userData.name,
+        email: input.userData.email,
+        plan: input.userData.plan || 'free',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        settings: {
+          notifications: true,
+          newsletter: true,
+          theme: 'light'
+        }
+      };
+      
+      console.log('User created:', userId);
+      console.log('Plan:', user.plan);
+      
+      return user;
 
-  # Step 3: Send welcome email (only if user was created)
+  # Step 3: Send welcome email
   - id: send_welcome_email
-    activity: sendEmail
+    activity: email
     dependsOn: ["create_user"]
     when: "{{step.create_user.result.status}} == 'active'"
-    timeout:
-      startToClose: 30s
     input:
       to: "{{inputs.user.email}}"
       subject: "Welcome to Our Service, {{inputs.user.name}}!"
       body: |
         Hello {{inputs.user.name}},
         
-        Thank you for registering with our service. We're excited to have you on board!
+        Thank you for registering! We're excited to have you on board.
         
-        Your account has been successfully created with the email: {{inputs.user.email}}
+        Your account details:
+        - User ID: {{step.create_user.result.userId}}
+        - Email: {{inputs.user.email}}
+        - Plan: {{step.create_user.result.plan}}
+        
+        Get started by exploring our features!
         
         Best regards,
         The Team
-    retry:
-      count: 2
-      initialInterval: 5s
 
   # Step 4: Log the registration (runs in parallel with email)
   - id: log_registration
-    activity: logMessage
+    activity: log
     dependsOn: ["create_user"]
-    when: "{{step.create_user.result.userId}}"
     input:
       level: "info"
       message: "New user registration completed"
-      context:
+      data:
         userId: "{{step.create_user.result.userId}}"
         email: "{{inputs.user.email}}"
+        plan: "{{step.create_user.result.plan}}"
 
-  # Step 5: Wait for manual approval signal
-  # Client sends: handle.signal('step', 'approval', { approved: true })
-  - id: approval
+  # Step 5: Generate onboarding tasks
+  - id: generate_onboarding
+    type: code
+    dependsOn: ["create_user"]
+    input:
+      user: "{{step.create_user.result}}"
+    code: |
+      const tasks = [
+        { id: 1, title: 'Complete your profile', completed: false },
+        { id: 2, title: 'Set up two-factor authentication', completed: false },
+        { id: 3, title: 'Explore the dashboard', completed: false },
+        { id: 4, title: 'Invite team members', completed: false }
+      ];
+      
+      // Add premium-specific tasks
+      if (input.user.plan === 'premium') {
+        tasks.push(
+          { id: 5, title: 'Set up API access', completed: false },
+          { id: 6, title: 'Configure webhooks', completed: false }
+        );
+      }
+      
+      console.log('Generated', tasks.length, 'onboarding tasks');
+      
+      return {
+        userId: input.user.userId,
+        tasks,
+        totalTasks: tasks.length,
+        generatedAt: new Date().toISOString()
+      };
+
+  # Step 6: Wait for profile completion signal
+  - id: await_profile_completion
     type: signal
-    activity: waitForApproval
-    dependsOn: ["send_welcome_email"]
+    dependsOn: ["send_welcome_email", "generate_onboarding"]
 
-  # Step 6: Send follow-up email only if approved
+  # Step 7: Send follow-up email after profile completion
   - id: send_followup_email
-    activity: sendEmail
-    dependsOn: ["approval"]
-    when: "{{step.approval.result.approved}} == true"
+    activity: email
+    dependsOn: ["await_profile_completion"]
+    when: "{{step.await_profile_completion.result.profileCompleted}} == true"
     input:
       to: "{{inputs.user.email}}"
-      subject: "Getting Started with Our Service"
+      subject: "Great progress, {{inputs.user.name}}!"
       body: |
         Hi {{inputs.user.name}},
         
-        We hope you're enjoying our service so far! Here are some tips to get started:
+        Congratulations on completing your profile!
         
-        1. Complete your profile
-        2. Explore our features
-        3. Join our community
+        Here are some tips to get the most out of our service:
+        1. Check out our documentation
+        2. Join our community forum
+        3. Set up integrations
         
-        Let us know if you have any questions!
+        Happy exploring!
         
         Best regards,
         The Team
-    retry:
-      count: 2
-      initialInterval: 10s

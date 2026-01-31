@@ -303,7 +303,7 @@ describe('DSL: data-processing.workflow.yaml (code steps)', () => {
     const logResults = def.steps.find(s => s.id === 'log_results');
 
     expect(logResults).toBeDefined();
-    expect(logResults?.activity).toBe('logMessage');
+    expect(logResults?.activity).toBe('log');
     expect(logResults?.type).toBeUndefined(); // defaults to 'activity'
   });
 });

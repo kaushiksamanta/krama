@@ -1,8 +1,8 @@
-# IT Incident Response Workflow
-# Automated incident detection, triage, escalation, and resolution tracking
 name: incident-response
 version: 1.0.0
-description: Automated IT incident management with alerting, escalation, and resolution tracking
+description: |
+  Self-contained IT incident response workflow demonstrating incident detection,
+  triage, escalation, and resolution tracking - all simulated without external APIs.
 
 inputs:
   incident:
@@ -21,6 +21,8 @@ inputs:
       errorRate: 45.2
       affectedRegion: "us-east-1"
       alertId: "ALT-789012"
+  incidentManagerEmail: "incident-manager@example.com"
+  stakeholderEmails: "stakeholders@example.com"
 
 steps:
   # Step 1: Validate incident data
@@ -100,109 +102,68 @@ steps:
         priority: "{{step.enrich_incident.result.priority}}"
         assignedTeam: "{{step.enrich_incident.result.assignedTeam}}"
 
-  # Step 4: Fetch on-call engineer
+  # Step 4: Get on-call engineer (simulated)
   - id: get_oncall_engineer
-    activity: http
+    type: code
     dependsOn: ["enrich_incident"]
     input:
-      url: "https://oncall.example.com/api/schedule/current"
-      method: "GET"
-      headers:
-        Authorization: "Bearer {{inputs.oncallApiToken}}"
-      timeout: 10000
+      assignedTeam: "{{step.enrich_incident.result.assignedTeam}}"
+    code: |
+      // Simulated on-call schedule lookup
+      const oncallSchedule = {
+        'platform-team': { name: 'Alice Chen', email: 'alice.chen@example.com', phone: '+1-555-0101' },
+        'identity-team': { name: 'Bob Martinez', email: 'bob.martinez@example.com', phone: '+1-555-0102' },
+        'commerce-team': { name: 'Carol Johnson', email: 'carol.johnson@example.com', phone: '+1-555-0103' },
+        'payments-team': { name: 'David Kim', email: 'david.kim@example.com', phone: '+1-555-0104' },
+        'dba-team': { name: 'Eve Wilson', email: 'eve.wilson@example.com', phone: '+1-555-0105' }
+      };
+      
+      const engineer = oncallSchedule[input.assignedTeam] || oncallSchedule['platform-team'];
+      
+      console.log('On-call engineer:', engineer.name);
+      
+      return {
+        engineer,
+        team: input.assignedTeam,
+        retrievedAt: new Date().toISOString()
+      };
 
-  # Step 5: Create incident ticket in ITSM
+  # Step 5: Create incident ticket (simulated)
   - id: create_itsm_ticket
-    activity: http
+    type: code
     dependsOn: ["enrich_incident", "get_oncall_engineer"]
     input:
-      url: "https://itsm.example.com/api/incidents"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.itsmApiToken}}"
-      body:
-        externalId: "{{step.enrich_incident.result.id}}"
-        title: "{{step.enrich_incident.result.title}}"
-        description: "{{step.enrich_incident.result.description}}"
-        priority: "{{step.enrich_incident.result.priority}}"
-        assignee: "{{step.get_oncall_engineer.result.data.engineer.email}}"
-        team: "{{step.enrich_incident.result.assignedTeam}}"
-        slaDeadline: "{{step.enrich_incident.result.slaDeadline}}"
-        tags: "{{step.enrich_incident.result.affectedServices}}"
-      timeout: 15000
-    retry:
-      count: 2
-      initialInterval: 2s
+      incident: "{{step.enrich_incident.result}}"
+      oncall: "{{step.get_oncall_engineer.result}}"
+    code: |
+      // Simulate ITSM ticket creation
+      const ticketId = 'TKT-' + Date.now();
+      
+      const ticket = {
+        ticketId,
+        externalId: input.incident.id,
+        title: input.incident.title,
+        description: input.incident.description,
+        priority: input.incident.priority,
+        assignee: input.oncall.engineer.email,
+        team: input.incident.assignedTeam,
+        slaDeadline: input.incident.slaDeadline,
+        tags: input.incident.affectedServices,
+        status: 'open',
+        createdAt: new Date().toISOString()
+      };
+      
+      console.log('ITSM ticket created:', ticketId);
+      
+      return ticket;
 
-  # Step 6: Send Slack alert to team channel
-  - id: send_slack_alert
-    activity: http
-    dependsOn: ["enrich_incident"]
-    input:
-      url: "https://slack.com/api/chat.postMessage"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.slackBotToken}}"
-      body:
-        channel: "#incident-{{step.enrich_incident.result.assignedTeam}}"
-        text: "🚨 *New Incident*: {{step.enrich_incident.result.title}}"
-        blocks:
-          - type: "header"
-            text:
-              type: "plain_text"
-              text: "🚨 Incident Alert"
-          - type: "section"
-            fields:
-              - type: "mrkdwn"
-                text: "*ID:* {{step.enrich_incident.result.id}}"
-              - type: "mrkdwn"
-                text: "*Severity:* {{step.enrich_incident.result.severity}}"
-              - type: "mrkdwn"
-                text: "*Priority:* P{{step.enrich_incident.result.priority}}"
-              - type: "mrkdwn"
-                text: "*SLA:* {{step.enrich_incident.result.slaDeadline}}"
-          - type: "section"
-            text:
-              type: "mrkdwn"
-              text: "{{step.enrich_incident.result.description}}"
-      timeout: 10000
-
-  # Step 7: Page on-call engineer for high/critical
-  - id: page_oncall
-    activity: http
-    dependsOn: ["get_oncall_engineer", "enrich_incident"]
-    when: "{{step.enrich_incident.result.priority}} <= 2"
-    input:
-      url: "https://pagerduty.example.com/api/incidents"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Token {{inputs.pagerdutyApiToken}}"
-      body:
-        incident:
-          type: "incident"
-          title: "[P{{step.enrich_incident.result.priority}}] {{step.enrich_incident.result.title}}"
-          service:
-            id: "{{inputs.pagerdutyServiceId}}"
-            type: "service_reference"
-          urgency: "high"
-          body:
-            type: "incident_body"
-            details: "{{step.enrich_incident.result.description}}"
-      timeout: 10000
-
-  # Step 8: Send email notification
+  # Step 6: Send incident email notification
   - id: send_incident_email
     activity: email
-    dependsOn: ["enrich_incident", "get_oncall_engineer"]
+    dependsOn: ["enrich_incident", "get_oncall_engineer", "create_itsm_ticket"]
     input:
-      to: "{{step.get_oncall_engineer.result.data.engineer.email}}"
-      cc:
-        - "{{inputs.incidentManagerEmail}}"
-        - "{{step.enrich_incident.result.assignedTeam}}@example.com"
-      subject: "[{{step.enrich_incident.result.severity | upper}}] Incident: {{step.enrich_incident.result.title}}"
+      to: "{{step.get_oncall_engineer.result.engineer.email}}"
+      subject: "[{{step.enrich_incident.result.severity}}] Incident: {{step.enrich_incident.result.title}}"
       body: |
         <h1>Incident Alert</h1>
         <table>
@@ -211,52 +172,54 @@ steps:
           <tr><td><strong>Priority:</strong></td><td>P{{step.enrich_incident.result.priority}}</td></tr>
           <tr><td><strong>SLA Deadline:</strong></td><td>{{step.enrich_incident.result.slaDeadline}}</td></tr>
           <tr><td><strong>Assigned Team:</strong></td><td>{{step.enrich_incident.result.assignedTeam}}</td></tr>
+          <tr><td><strong>Ticket:</strong></td><td>{{step.create_itsm_ticket.result.ticketId}}</td></tr>
         </table>
         
         <h2>Description</h2>
         <p>{{step.enrich_incident.result.description}}</p>
         
         <h2>Affected Services</h2>
-        <ul>
-          {{#step.enrich_incident.result.affectedServices}}
-          <li>{{.}}</li>
-          {{/step.enrich_incident.result.affectedServices}}
-        </ul>
-        
-        <p><a href="https://itsm.example.com/incidents/{{step.create_itsm_ticket.result.data.ticketId}}">View in ITSM</a></p>
+        <p>{{step.enrich_incident.result.affectedServices}}</p>
 
-  # Step 9: Run automated diagnostics
+  # Step 7: Run automated diagnostics (simulated)
   - id: run_diagnostics
-    activity: http
+    type: code
     dependsOn: ["enrich_incident"]
     input:
-      url: "https://diagnostics.example.com/api/run"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-      body:
-        incidentId: "{{step.enrich_incident.result.id}}"
-        services: "{{step.enrich_incident.result.affectedServices}}"
-        checks:
-          - "connectivity"
-          - "resource_usage"
-          - "error_logs"
-          - "recent_deployments"
-      timeout: 60000
+      incident: "{{step.enrich_incident.result}}"
+    code: |
+      // Simulate automated diagnostics
+      const diagnosticResults = input.incident.affectedServices.map(service => {
+        // Simulate various check results
+        const checks = [
+          { name: 'connectivity', status: Math.random() > 0.3 ? 'passed' : 'failed', message: 'Network connectivity check' },
+          { name: 'resource_usage', status: 'warning', message: 'High CPU usage detected', details: { cpu: 85, memory: 72 } },
+          { name: 'error_logs', status: 'warning', message: 'Elevated error rate', details: { errorCount: 150, timeWindow: '5m' } },
+          { name: 'recent_deployments', status: 'passed', message: 'No recent deployments', details: { deployedWithin24h: false } }
+        ];
+        
+        return { service, checks };
+      });
+      
+      console.log('Diagnostics completed for', diagnosticResults.length, 'services');
+      
+      return {
+        results: diagnosticResults.flatMap(r => r.checks),
+        services: diagnosticResults,
+        completedAt: new Date().toISOString()
+      };
 
-  # Step 10: Analyze diagnostics results
+  # Step 8: Analyze diagnostics results
   - id: analyze_diagnostics
     type: code
     dependsOn: ["run_diagnostics"]
     input:
-      diagnostics: "{{step.run_diagnostics.result.data}}"
-      incident: "{{step.enrich_incident.result}}"
+      diagnostics: "{{step.run_diagnostics.result}}"
     code: |
       const results = input.diagnostics.results || [];
       const findings = [];
       const recommendations = [];
       
-      // Analyze each diagnostic check
       results.forEach(check => {
         if (check.status === 'failed' || check.status === 'warning') {
           findings.push({
@@ -266,11 +229,10 @@ steps:
             details: check.details
           });
           
-          // Generate recommendations based on findings
           if (check.name === 'connectivity' && check.status === 'failed') {
             recommendations.push('Check network connectivity and firewall rules');
           }
-          if (check.name === 'resource_usage' && check.details?.cpu > 90) {
+          if (check.name === 'resource_usage' && check.details?.cpu > 80) {
             recommendations.push('High CPU usage detected - consider scaling up');
           }
           if (check.name === 'recent_deployments' && check.details?.deployedWithin24h) {
@@ -281,9 +243,7 @@ steps:
       
       const rootCauseCandidate = findings.length > 0 ? findings[0].check : 'unknown';
       
-      console.log('Diagnostics analysis complete');
-      console.log('Findings:', findings.length);
-      console.log('Root cause candidate:', rootCauseCandidate);
+      console.log('Analysis complete. Findings:', findings.length);
       
       return {
         findings,
@@ -293,27 +253,33 @@ steps:
         analysisTimestamp: new Date().toISOString()
       };
 
-  # Step 11: Update ITSM ticket with diagnostics
+  # Step 9: Update ticket with diagnostics
   - id: update_ticket_diagnostics
-    activity: http
+    type: code
     dependsOn: ["analyze_diagnostics", "create_itsm_ticket"]
     input:
-      url: "https://itsm.example.com/api/incidents/{{step.create_itsm_ticket.result.data.ticketId}}/comments"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.itsmApiToken}}"
-      body:
-        comment: "Automated diagnostics completed. Findings: {{step.analyze_diagnostics.result.findings.length}}. Root cause candidate: {{step.analyze_diagnostics.result.rootCauseCandidate}}"
-        internal: false
-      timeout: 10000
+      analysis: "{{step.analyze_diagnostics.result}}"
+      ticketId: "{{step.create_itsm_ticket.result.ticketId}}"
+    code: |
+      // Simulate ticket update
+      const comment = {
+        ticketId: input.ticketId,
+        type: 'diagnostics_update',
+        content: 'Automated diagnostics completed. Findings: ' + input.analysis.findings.length + '. Root cause candidate: ' + input.analysis.rootCauseCandidate,
+        recommendations: input.analysis.recommendations,
+        addedAt: new Date().toISOString()
+      };
+      
+      console.log('Ticket updated with diagnostics');
+      
+      return comment;
 
-  # Step 12: Wait for acknowledgment signal
+  # Step 10: Wait for acknowledgment signal
   - id: await_acknowledgment
     type: signal
-    dependsOn: ["send_slack_alert", "send_incident_email", "page_oncall"]
+    dependsOn: ["send_incident_email"]
 
-  # Step 13: Log acknowledgment
+  # Step 11: Log acknowledgment
   - id: log_acknowledgment
     activity: log
     dependsOn: ["await_acknowledgment"]
@@ -323,14 +289,13 @@ steps:
       data:
         incidentId: "{{step.enrich_incident.result.id}}"
         acknowledgedBy: "{{step.await_acknowledgment.result.acknowledgedBy}}"
-        acknowledgedAt: "{{step.await_acknowledgment.result.timestamp}}"
 
-  # Step 14: Wait for resolution signal
+  # Step 12: Wait for resolution signal
   - id: await_resolution
     type: signal
     dependsOn: ["log_acknowledgment"]
 
-  # Step 15: Process resolution
+  # Step 13: Process resolution
   - id: process_resolution
     type: code
     dependsOn: ["await_resolution", "enrich_incident"]
@@ -346,14 +311,12 @@ steps:
         status: 'resolved',
         resolvedAt: new Date().toISOString(),
         resolution: {
-          summary: resolution.summary,
-          rootCause: resolution.rootCause,
-          remediation: resolution.remediation,
-          resolvedBy: resolution.resolvedBy
+          summary: resolution.summary || 'Issue resolved',
+          rootCause: resolution.rootCause || 'Under investigation',
+          remediation: resolution.remediation || 'Applied fix',
+          resolvedBy: resolution.resolvedBy || 'on-call engineer'
         },
         metrics: {
-          timeToAcknowledge: null, // Would calculate from timeline
-          timeToResolve: null,
           slaBreached: new Date() > new Date(incident.slaDeadline)
         }
       };
@@ -363,23 +326,28 @@ steps:
       
       return resolvedIncident;
 
-  # Step 16: Close ITSM ticket
+  # Step 14: Close ITSM ticket
   - id: close_itsm_ticket
-    activity: http
+    type: code
     dependsOn: ["process_resolution", "create_itsm_ticket"]
     input:
-      url: "https://itsm.example.com/api/incidents/{{step.create_itsm_ticket.result.data.ticketId}}"
-      method: "PATCH"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.itsmApiToken}}"
-      body:
-        status: "resolved"
-        resolution: "{{step.process_resolution.result.resolution.summary}}"
-        rootCause: "{{step.process_resolution.result.resolution.rootCause}}"
-      timeout: 10000
+      resolution: "{{step.process_resolution.result}}"
+      ticketId: "{{step.create_itsm_ticket.result.ticketId}}"
+    code: |
+      // Simulate ticket closure
+      const closedTicket = {
+        ticketId: input.ticketId,
+        status: 'resolved',
+        resolution: input.resolution.resolution.summary,
+        rootCause: input.resolution.resolution.rootCause,
+        closedAt: new Date().toISOString()
+      };
+      
+      console.log('Ticket closed:', closedTicket.ticketId);
+      
+      return closedTicket;
 
-  # Step 17: Send resolution notification
+  # Step 15: Send resolution notification
   - id: send_resolution_notification
     activity: email
     dependsOn: ["process_resolution"]
@@ -402,7 +370,7 @@ steps:
         <h2>Root Cause</h2>
         <p>{{step.process_resolution.result.resolution.rootCause}}</p>
 
-  # Step 18: Log incident closure
+  # Step 16: Log incident closure
   - id: log_incident_closed
     activity: log
     dependsOn: ["close_itsm_ticket", "send_resolution_notification"]

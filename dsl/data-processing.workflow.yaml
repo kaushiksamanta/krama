@@ -144,7 +144,7 @@ steps:
 
   # Step 5: Log the results (using traditional activity)
   - id: log_results
-    activity: logMessage
+    activity: log
     dependsOn: ["generate_report", "filter_high_value"]
     input:
       level: "info"

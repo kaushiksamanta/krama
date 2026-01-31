@@ -1,8 +1,8 @@
-# E-Commerce Order Fulfillment Workflow
-# Handles order validation, inventory check, payment, shipping, and notifications
 name: order-fulfillment
 version: 1.0.0
-description: Complete e-commerce order processing from validation to delivery notification
+description: |
+  Self-contained e-commerce order fulfillment workflow demonstrating
+  validation, inventory management, payment, shipping, and notifications.
 
 inputs:
   order:
@@ -25,8 +25,9 @@ inputs:
       country: "US"
     paymentMethod:
       type: "credit_card"
-      token: "tok_visa_4242"
+      cardLast4: "4242"
     shippingMethod: "express"
+  customerEmail: "customer@example.com"
 
 steps:
   # Step 1: Validate order structure
@@ -77,61 +78,91 @@ steps:
         itemCount: items.reduce((sum, item) => sum + item.quantity, 0)
       };
 
-  # Step 3: Check inventory for all items
+  # Step 3: Check inventory for all items (simulated)
   - id: check_inventory
-    activity: http
+    type: code
     dependsOn: ["calculate_totals"]
     input:
-      url: "https://inventory.example.com/api/check"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-      body:
-        items: "{{inputs.order.items}}"
-        warehouseRegion: "{{inputs.order.shippingAddress.state}}"
-      timeout: 10000
-    retry:
-      count: 2
-      initialInterval: 1s
+      items: "{{inputs.order.items}}"
+    code: |
+      // Simulated inventory database
+      const inventory = {
+        'PROD-001': { available: 50, reserved: 5 },
+        'PROD-002': { available: 200, reserved: 10 },
+        'PROD-003': { available: 0, reserved: 0 }
+      };
+      
+      const results = input.items.map(item => {
+        const stock = inventory[item.sku] || { available: 0, reserved: 0 };
+        const availableQty = stock.available - stock.reserved;
+        return {
+          sku: item.sku,
+          name: item.name,
+          requested: item.quantity,
+          available: availableQty,
+          inStock: availableQty >= item.quantity
+        };
+      });
+      
+      const allAvailable = results.every(r => r.inStock);
+      
+      console.log('Inventory check:', allAvailable ? 'All items available' : 'Some items unavailable');
+      
+      return {
+        items: results,
+        allAvailable,
+        checkedAt: new Date().toISOString()
+      };
 
   # Step 4: Reserve inventory
   - id: reserve_inventory
-    activity: http
+    type: code
     dependsOn: ["check_inventory"]
-    when: "{{step.check_inventory.result.data.allAvailable}} == true"
+    when: "{{step.check_inventory.result.allAvailable}} == true"
     input:
-      url: "https://inventory.example.com/api/reserve"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-      body:
-        orderId: "{{inputs.order.orderId}}"
-        items: "{{inputs.order.items}}"
-        expiresIn: 900
-      timeout: 10000
+      orderId: "{{inputs.order.orderId}}"
+      items: "{{inputs.order.items}}"
+    code: |
+      // Simulate inventory reservation
+      const reservationId = 'RES-' + Date.now();
+      
+      const reservations = input.items.map(item => ({
+        sku: item.sku,
+        quantity: item.quantity,
+        reservationId,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() // 15 min hold
+      }));
+      
+      console.log('Inventory reserved:', reservationId);
+      
+      return {
+        reservationId,
+        orderId: input.orderId,
+        reservations,
+        reservedAt: new Date().toISOString()
+      };
 
-  # Step 5: Process payment
+  # Step 5: Process payment (simulated)
   - id: process_payment
-    activity: http
+    type: code
     dependsOn: ["reserve_inventory"]
     input:
-      url: "https://payments.example.com/api/charge"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.paymentApiKey}}"
-      body:
-        amount: "{{step.calculate_totals.result.total}}"
-        currency: "USD"
-        paymentToken: "{{inputs.order.paymentMethod.token}}"
-        orderId: "{{inputs.order.orderId}}"
-        customerId: "{{inputs.order.customerId}}"
-        description: "Order {{inputs.order.orderId}}"
-      timeout: 30000
-    retry:
-      count: 3
-      initialInterval: 2s
-      backoffCoefficient: 2.0
+      order: "{{inputs.order}}"
+      totals: "{{step.calculate_totals.result}}"
+    code: |
+      // Simulate payment processing
+      const transactionId = 'TXN-' + Date.now();
+      
+      console.log('Processing payment:', transactionId);
+      console.log('Amount:', input.totals.total);
+      
+      return {
+        transactionId,
+        status: 'completed',
+        amount: input.totals.total,
+        cardLast4: input.order.paymentMethod.cardLast4,
+        processedAt: new Date().toISOString()
+      };
 
   # Step 6: Log payment success
   - id: log_payment
@@ -143,27 +174,34 @@ steps:
       data:
         orderId: "{{inputs.order.orderId}}"
         amount: "{{step.calculate_totals.result.total}}"
-        transactionId: "{{step.process_payment.result.data.transactionId}}"
+        transactionId: "{{step.process_payment.result.transactionId}}"
 
-  # Step 7: Create shipping label
+  # Step 7: Create shipping label (simulated)
   - id: create_shipping_label
-    activity: http
+    type: code
     dependsOn: ["process_payment"]
     input:
-      url: "https://shipping.example.com/api/labels"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-      body:
-        orderId: "{{inputs.order.orderId}}"
-        shippingMethod: "{{inputs.order.shippingMethod}}"
-        address: "{{inputs.order.shippingAddress}}"
-        weight: 2.5
-        dimensions:
-          length: 12
-          width: 8
-          height: 6
-      timeout: 15000
+      order: "{{inputs.order}}"
+    code: |
+      // Simulate shipping label creation
+      const trackingNumber = 'TRK' + Date.now().toString().slice(-10);
+      const carriers = {
+        standard: 'USPS',
+        express: 'FedEx',
+        overnight: 'UPS'
+      };
+      
+      const label = {
+        trackingNumber,
+        carrier: carriers[input.order.shippingMethod] || 'USPS',
+        labelUrl: 'https://shipping.example.com/labels/' + trackingNumber + '.pdf',
+        estimatedDelivery: new Date(Date.now() + (input.order.shippingMethod === 'overnight' ? 1 : input.order.shippingMethod === 'express' ? 3 : 7) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        createdAt: new Date().toISOString()
+      };
+      
+      console.log('Shipping label created:', trackingNumber);
+      
+      return label;
 
   # Step 8: Transform order data for warehouse
   - id: prepare_warehouse_order
@@ -173,29 +211,33 @@ steps:
       data:
         order: "{{inputs.order}}"
         totals: "{{step.calculate_totals.result}}"
-        shipping: "{{step.create_shipping_label.result.data}}"
-        payment: "{{step.process_payment.result.data}}"
+        shipping: "{{step.create_shipping_label.result}}"
+        payment: "{{step.process_payment.result}}"
       operations:
         - type: pick
           config:
             fields: ["order", "shipping"]
-        - type: merge
-          config:
-            source:
-              status: "ready_to_ship"
-              priority: "high"
 
-  # Step 9: Send to warehouse fulfillment system
+  # Step 9: Submit to warehouse (simulated)
   - id: submit_to_warehouse
-    activity: http
+    type: code
     dependsOn: ["prepare_warehouse_order"]
     input:
-      url: "https://warehouse.example.com/api/orders"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-      body: "{{step.prepare_warehouse_order.result.data}}"
-      timeout: 10000
+      warehouseData: "{{step.prepare_warehouse_order.result.data}}"
+      orderId: "{{inputs.order.orderId}}"
+    code: |
+      // Simulate warehouse submission
+      const warehouseOrderId = 'WH-' + Date.now();
+      
+      console.log('Submitted to warehouse:', warehouseOrderId);
+      
+      return {
+        warehouseOrderId,
+        orderId: input.orderId,
+        status: 'ready_to_ship',
+        priority: 'high',
+        submittedAt: new Date().toISOString()
+      };
 
   # Step 10: Send order confirmation email
   - id: send_confirmation_email
@@ -236,11 +278,9 @@ steps:
         <h1>Your Order is On Its Way!</h1>
         <p>Great news! Your order has been shipped.</p>
         
-        <p><strong>Tracking Number:</strong> {{step.await_shipment.result.trackingNumber}}</p>
-        <p><strong>Carrier:</strong> {{step.await_shipment.result.carrier}}</p>
-        <p><strong>Estimated Delivery:</strong> {{step.await_shipment.result.estimatedDelivery}}</p>
-        
-        <a href="{{step.await_shipment.result.trackingUrl}}">Track Your Package</a>
+        <p><strong>Tracking Number:</strong> {{step.create_shipping_label.result.trackingNumber}}</p>
+        <p><strong>Carrier:</strong> {{step.create_shipping_label.result.carrier}}</p>
+        <p><strong>Estimated Delivery:</strong> {{step.create_shipping_label.result.estimatedDelivery}}</p>
 
   # Step 13: Log order completion
   - id: log_order_complete
@@ -251,5 +291,5 @@ steps:
       level: "info"
       data:
         orderId: "{{inputs.order.orderId}}"
-        trackingNumber: "{{step.await_shipment.result.trackingNumber}}"
+        trackingNumber: "{{step.create_shipping_label.result.trackingNumber}}"
         totalAmount: "{{step.calculate_totals.result.total}}"

@@ -1,8 +1,8 @@
-# User Onboarding Pipeline
-# A comprehensive workflow demonstrating validation, HTTP calls, transforms, emails, and logging
 name: user-onboarding
 version: 1.0.0
-description: Complete user onboarding with validation, API calls, data transformation, and notifications
+description: |
+  Self-contained user onboarding workflow with validation, data transformation,
+  email notifications, and scheduled follow-ups - no external API dependencies.
 
 inputs:
   user:
@@ -28,43 +28,50 @@ steps:
           email: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
         custom: "data.plan === 'free' || data.plan === 'premium' || data.plan === 'enterprise'"
 
-  # Step 2: Check if user already exists via API
+  # Step 2: Check if user already exists (simulated)
   - id: check_existing_user
-    activity: http
+    type: code
     dependsOn: ["validate_user"]
     when: "{{step.validate_user.result.isValid}}"
     input:
-      url: "https://api.example.com/users/check"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        Authorization: "Bearer {{inputs.apiToken}}"
-      body:
-        email: "{{inputs.user.email}}"
-      timeout: 10000
-    retry:
-      count: 2
-      initialInterval: 1s
+      email: "{{inputs.user.email}}"
+    code: |
+      // Simulate database lookup for existing user
+      // In real scenario, this would query a database
+      const existingEmails = [
+        'admin@example.com',
+        'test@example.com',
+        'demo@example.com'
+      ];
+      
+      const exists = existingEmails.includes(input.email.toLowerCase());
+      
+      console.log('Checking if user exists:', input.email);
+      console.log('User exists:', exists);
+      
+      return {
+        email: input.email,
+        exists,
+        checkedAt: new Date().toISOString()
+      };
 
   # Step 3: Process user data with code node
   - id: process_user_data
     type: code
     dependsOn: ["check_existing_user"]
-    when: "{{step.check_existing_user.result.data.exists}} == false"
+    when: "{{step.check_existing_user.result.exists}} == false"
     input:
       userData: "{{inputs.user}}"
-      checkResult: "{{step.check_existing_user.result}}"
     code: |
       const user = {
         ...input.userData,
-        id: crypto.randomUUID(),
+        id: 'USR-' + Date.now(),
         createdAt: new Date().toISOString(),
         status: 'pending_verification',
         tier: input.userData.plan === 'enterprise' ? 'vip' : 'standard',
         metadata: {
           source: 'onboarding_workflow',
-          referral: input.userData.referralCode || null,
-          ipAddress: '192.168.1.1'
+          referral: input.userData.referralCode || null
         }
       };
       
@@ -83,27 +90,27 @@ steps:
         - type: pick
           config:
             fields: ["user"]
-        - type: rename
-          config:
-            mapping:
-              user: "contact"
 
-  # Step 5: Create user in external CRM
+  # Step 5: Create CRM contact (simulated)
   - id: create_crm_contact
-    activity: http
+    type: code
     dependsOn: ["prepare_crm_data"]
     input:
-      url: "https://crm.example.com/api/contacts"
-      method: "POST"
-      headers:
-        Content-Type: "application/json"
-        X-API-Key: "{{inputs.crmApiKey}}"
-      body: "{{step.prepare_crm_data.result.data}}"
-      timeout: 15000
-    retry:
-      count: 3
-      initialInterval: 2s
-      backoffCoefficient: 2.0
+      crmData: "{{step.prepare_crm_data.result.data}}"
+    code: |
+      // Simulate CRM contact creation
+      const contact = {
+        crmId: 'CRM-' + Date.now(),
+        ...input.crmData.user,
+        crmStatus: 'active',
+        leadScore: input.crmData.user.plan === 'enterprise' ? 100 : 
+                   input.crmData.user.plan === 'premium' ? 75 : 50,
+        syncedAt: new Date().toISOString()
+      };
+      
+      console.log('CRM contact created:', contact.crmId);
+      
+      return contact;
 
   # Step 6: Send welcome email
   - id: send_welcome_email
@@ -131,7 +138,7 @@ steps:
         userId: "{{step.process_user_data.result.user.id}}"
         email: "{{inputs.user.email}}"
         plan: "{{inputs.user.plan}}"
-        crmSynced: true
+        crmId: "{{step.create_crm_contact.result.crmId}}"
 
   # Step 8: Wait for email verification (signal step)
   - id: await_email_verification
@@ -177,7 +184,7 @@ steps:
     activity: wait
     dependsOn: ["send_activation_email"]
     input:
-      duration: "24h"
+      duration: "5s"
 
   # Step 12: Send follow-up engagement email
   - id: send_followup_email
@@ -189,7 +196,7 @@ steps:
       body: |
         <h1>We're Here to Help!</h1>
         <p>Hi {{inputs.user.name}},</p>
-        <p>It's been 24 hours since you joined. How are you finding our platform?</p>
+        <p>How are you finding our platform?</p>
         <p>Here are some resources to help you get started:</p>
         <ul>
           <li><a href="https://example.com/docs">Documentation</a></li>

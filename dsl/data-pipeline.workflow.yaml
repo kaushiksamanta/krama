@@ -1,112 +1,196 @@
 name: data-pipeline
 version: 1.0.0
-description: ETL pipeline with data extraction, transformation, validation, and loading
+description: |
+  Self-contained ETL pipeline demonstrating data extraction, transformation, 
+  validation, and loading - all using code steps without external dependencies.
 
 inputs:
-  source:
-    url: string
-    apiKey: string
+  # Sample source data embedded in the workflow
+  sourceData:
+    records:
+      - id: 1
+        name: "Alice Johnson"
+        email: "alice@example.com"
+        department: "Engineering"
+        salary: 85000
+        hireDate: "2022-03-15"
+      - id: 2
+        name: "Bob Smith"
+        email: "bob@example.com"
+        department: "Marketing"
+        salary: 72000
+        hireDate: "2021-08-22"
+      - id: 3
+        name: "Carol Williams"
+        email: "carol@example.com"
+        department: "Engineering"
+        salary: 95000
+        hireDate: "2020-01-10"
+      - id: 4
+        name: "David Brown"
+        email: "david@example.com"
+        department: "Sales"
+        salary: 68000
+        hireDate: "2023-06-01"
   destination:
-    database: string
-    table: string
+    database: "analytics_db"
+    table: "employee_metrics"
 
 steps:
-  # Step 1: Extract data from source
+  # Step 1: Extract and validate source data
   - id: extract_data
-    activity: fetchData
+    type: code
     input:
-      url: "{{inputs.source.url}}"
-      method: "GET"
-      headers:
-        Authorization: "Bearer {{inputs.source.apiKey}}"
-    timeout:
-      startToClose: 60s
-    retry:
-      count: 3
-      initialInterval: 5s
-      backoffCoefficient: 2.0
+      sourceData: "{{inputs.sourceData}}"
+    code: |
+      const records = input.sourceData.records || [];
+      
+      console.log('Extracting data...');
+      console.log('Found', records.length, 'records');
+      
+      // Simulate extraction with timestamp
+      return {
+        records,
+        extractedAt: new Date().toISOString(),
+        recordCount: records.length
+      };
 
   # Step 2: Validate extracted data
   - id: validate_data
-    activity: validateInput
+    activity: validate
     dependsOn: ["extract_data"]
     input:
       data: "{{step.extract_data.result}}"
       rules:
-        required: ["records"]
-    retry:
-      count: 2
-      initialInterval: 1s
+        required: ["records", "recordCount"]
+        custom: "data.recordCount > 0"
 
-  # Step 3: Transform data (parallel processing could be added here)
+  # Step 3: Transform data - calculate metrics and enrich
   - id: transform_data
-    activity: fetchData
+    type: code
     dependsOn: ["validate_data"]
     when: "{{step.validate_data.result.isValid}}"
     input:
-      url: "http://transform-service/transform"
-      method: "POST"
-      data: "{{step.extract_data.result}}"
-    timeout:
-      startToClose: 120s
-    retry:
-      count: 2
-      initialInterval: 10s
+      extractedData: "{{step.extract_data.result}}"
+    code: |
+      const records = input.extractedData.records;
+      
+      // Transform each record with calculated fields
+      const processedRecords = records.map(record => {
+        const hireDate = new Date(record.hireDate);
+        const today = new Date();
+        const yearsEmployed = Math.floor((today - hireDate) / (365.25 * 24 * 60 * 60 * 1000));
+        
+        return {
+          employeeId: record.id,
+          fullName: record.name,
+          email: record.email,
+          department: record.department,
+          annualSalary: record.salary,
+          monthlySalary: Math.round(record.salary / 12 * 100) / 100,
+          yearsEmployed,
+          seniorityLevel: yearsEmployed >= 3 ? 'Senior' : yearsEmployed >= 1 ? 'Mid' : 'Junior',
+          salaryBand: record.salary >= 90000 ? 'High' : record.salary >= 70000 ? 'Mid' : 'Entry',
+          processedAt: new Date().toISOString()
+        };
+      });
+      
+      // Calculate aggregates by department
+      const deptStats = {};
+      processedRecords.forEach(r => {
+        if (!deptStats[r.department]) {
+          deptStats[r.department] = { count: 0, totalSalary: 0 };
+        }
+        deptStats[r.department].count++;
+        deptStats[r.department].totalSalary += r.annualSalary;
+      });
+      
+      Object.keys(deptStats).forEach(dept => {
+        deptStats[dept].avgSalary = Math.round(deptStats[dept].totalSalary / deptStats[dept].count);
+      });
+      
+      console.log('Transformed', processedRecords.length, 'records');
+      console.log('Department stats:', JSON.stringify(deptStats));
+      
+      return {
+        processedRecords,
+        recordCount: processedRecords.length,
+        departmentStats: deptStats,
+        transformedAt: new Date().toISOString()
+      };
 
   # Step 4: Validate transformed data
   - id: validate_transformed
-    activity: validateInput
+    activity: validate
     dependsOn: ["transform_data"]
     input:
       data: "{{step.transform_data.result}}"
       rules:
-        required: ["processedRecords", "recordCount"]
+        required: ["processedRecords", "recordCount", "departmentStats"]
 
-  # Step 5: Load data to destination
+  # Step 5: Load data (simulate database insert)
   - id: load_data
-    activity: fetchData
+    type: code
     dependsOn: ["validate_transformed"]
     when: "{{step.validate_transformed.result.isValid}}"
     input:
-      url: "http://database-service/load"
-      method: "POST"
-      data:
-        database: "{{inputs.destination.database}}"
-        table: "{{inputs.destination.table}}"
-        records: "{{step.transform_data.result.processedRecords}}"
-    timeout:
-      startToClose: 180s
-    retry:
-      count: 3
-      initialInterval: 15s
-      backoffCoefficient: 2.0
+      transformedData: "{{step.transform_data.result}}"
+      destination: "{{inputs.destination}}"
+    code: |
+      const startTime = Date.now();
+      
+      // Simulate database load operation
+      const records = input.transformedData.processedRecords;
+      const destination = input.destination;
+      
+      console.log('Loading', records.length, 'records to', destination.database + '.' + destination.table);
+      
+      // Simulate batch insert with IDs
+      const insertedRecords = records.map((record, index) => ({
+        ...record,
+        _insertId: `INS-${Date.now()}-${index}`,
+        _tableName: destination.table
+      }));
+      
+      const durationMs = Date.now() - startTime;
+      
+      return {
+        success: true,
+        database: destination.database,
+        table: destination.table,
+        recordsInserted: insertedRecords.length,
+        durationMs,
+        loadedAt: new Date().toISOString()
+      };
 
   # Step 6: Log pipeline completion
   - id: log_completion
-    activity: logMessage
+    activity: log
     dependsOn: ["load_data"]
     input:
       level: "info"
       message: "Data pipeline completed successfully"
-      context:
+      data:
         recordsProcessed: "{{step.transform_data.result.recordCount}}"
         destination: "{{inputs.destination.database}}.{{inputs.destination.table}}"
-        duration: "{{step.load_data.result.durationMs}}"
+        durationMs: "{{step.load_data.result.durationMs}}"
 
   # Step 7: Send notification
   - id: send_notification
-    activity: sendEmail
+    activity: email
     dependsOn: ["log_completion"]
     input:
       to: "data-team@example.com"
-      subject: "Data Pipeline Completed"
+      subject: "Data Pipeline Completed - {{inputs.destination.table}}"
       body: |
         The data pipeline has completed successfully.
         
-        Records Processed: {{step.transform_data.result.recordCount}}
-        Destination: {{inputs.destination.database}}.{{inputs.destination.table}}
+        Summary:
+        - Records Processed: {{step.transform_data.result.recordCount}}
+        - Destination: {{inputs.destination.database}}.{{inputs.destination.table}}
+        - Duration: {{step.load_data.result.durationMs}}ms
         
-        Pipeline execution completed.
-    retry:
-      count: 2
-      initialInterval: 3s
+        Department Breakdown:
+        {{step.transform_data.result.departmentStats}}
+        
+        Pipeline execution completed at {{step.load_data.result.loadedAt}}.
